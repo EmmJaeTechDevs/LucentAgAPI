@@ -201,22 +201,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Phone number already registered' });
       }
 
-      const existingUserByEmail = await storage.getUserByEmail(validatedData.email);
-      if (existingUserByEmail) {
-        return res.status(400).json({ message: 'Email already registered' });
+      // Check if email exists (if provided)
+      if (validatedData.email) {
+        const existingUserByEmail = await storage.getUserByEmail(validatedData.email);
+        if (existingUserByEmail) {
+          return res.status(400).json({ message: 'Email already registered' });
+        }
       }
 
       // Create buyer user
       const buyer = await storage.createBuyer(validatedData);
       
-      // Send verification OTPs
-      await otpService.createAndSendOtp(buyer.id, 'sms', 'verification', buyer.phone);
-      await otpService.createAndSendOtp(buyer.id, 'email', 'verification', buyer.email!);
+      // Send verification - either email OR SMS based on what's provided
+      if (buyer.email) {
+        await otpService.createAndSendOtp(buyer.id, 'email', 'verification', buyer.email);
+      } else {
+        await otpService.createAndSendOtp(buyer.id, 'sms', 'verification', buyer.phone);
+      }
+
+      const verificationMessage = buyer.email 
+        ? 'Buyer registered successfully. A verification email has been sent to your email address. Please click the verification link to complete your registration.'
+        : 'Buyer registered successfully. A verification SMS has been sent to your phone number. Please enter the code to complete your registration.';
 
       res.status(201).json({ 
-        message: 'Buyer registered successfully. Please verify your phone number and email address.',
+        message: verificationMessage,
         userId: buyer.id,
-        userType: 'buyer'
+        userType: 'buyer',
+        verificationMethod: buyer.email ? 'email' : 'sms'
       });
     } catch (error) {
       if (error instanceof z.ZodError) {

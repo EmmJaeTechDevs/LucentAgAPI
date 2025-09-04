@@ -185,7 +185,7 @@ export const insertBuyerSchema = createInsertSchema(users).pick({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phone: z.string().min(10, "Valid phone number is required"),
-  email: z.string().email("Valid email is required"),
+  email: z.string().email("Valid email is required").optional(),
   password: z.string().min(6, "Password must be at least 6 characters"),
   homeStreet: z.string().min(1, "Home street is required"),
   homeHouseNumber: z.string().min(1, "Home house number is required"),
