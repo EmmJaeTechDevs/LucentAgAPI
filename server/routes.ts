@@ -49,8 +49,44 @@ async function authenticateToken(req: Request, res: Response, next: any) {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Health check endpoint (no logging)
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  app.get('/api/health', async (req, res) => {
+    try {
+      const healthCheck = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        server: {
+          status: 'healthy',
+          uptime: process.uptime(),
+          memory: process.memoryUsage(),
+          version: process.version
+        },
+        database: {
+          status: 'healthy',
+          connected: false,
+          error: undefined as string | undefined
+        }
+      };
+
+      // Test database connection
+      try {
+        const result = await storage.testConnection();
+        healthCheck.database.connected = true;
+        healthCheck.database.status = 'healthy';
+      } catch (dbError) {
+        healthCheck.status = 'degraded';
+        healthCheck.database.status = 'unhealthy';
+        healthCheck.database.error = dbError instanceof Error ? dbError.message : 'Unknown database error';
+      }
+
+      const statusCode = healthCheck.status === 'ok' ? 200 : 503;
+      res.status(statusCode).json(healthCheck);
+    } catch (error) {
+      res.status(500).json({
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
   });
 
   // Authentication routes with specific logging

@@ -16,7 +16,7 @@ import {
   type InsertSession
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, count, gte } from "drizzle-orm";
+import { eq, and, desc, count, gte, lt } from "drizzle-orm";
 
 export interface IStorage {
   // User methods
@@ -55,6 +55,9 @@ export interface IStorage {
   }>;
   
   getRecentActivity(limit?: number): Promise<HttpLog[]>;
+  
+  // Health check
+  testConnection(): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -138,9 +141,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async cleanupExpiredOtps(): Promise<void> {
+    const now = new Date();
     await db
       .delete(otpCodes)
-      .where(gte(new Date(), otpCodes.expiresAt));
+      .where(lt(otpCodes.expiresAt, now));
   }
 
   async createSession(session: InsertSession): Promise<Session> {
@@ -247,6 +251,17 @@ export class DatabaseStorage implements IStorage {
       .from(httpLogs)
       .orderBy(desc(httpLogs.createdAt))
       .limit(limit);
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      // Simple query to test database connectivity
+      await db.select().from(users).limit(1);
+      return true;
+    } catch (error) {
+      console.error('Database connection test failed:', error);
+      return false;
+    }
   }
 }
 
