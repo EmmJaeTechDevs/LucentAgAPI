@@ -19,6 +19,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, count, gte, lt } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 export interface IStorage {
   // User methods
@@ -93,25 +94,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
+    const hashedPassword = await bcrypt.hash(insertUser.password, 12);
     const [user] = await db
       .insert(users)
-      .values(insertUser)
+      .values({ ...insertUser, password: hashedPassword })
       .returning();
     return user;
   }
 
   async createFarmer(insertFarmer: InsertFarmer): Promise<User> {
+    const hashedPassword = await bcrypt.hash(insertFarmer.password, 12);
     const [user] = await db
       .insert(users)
-      .values(insertFarmer)
+      .values({ ...insertFarmer, password: hashedPassword })
       .returning();
     return user;
   }
 
   async createBuyer(insertBuyer: InsertBuyer): Promise<User> {
+    const hashedPassword = await bcrypt.hash(insertBuyer.password, 12);
     const [user] = await db
       .insert(users)
-      .values(insertBuyer)
+      .values({ ...insertBuyer, password: hashedPassword })
       .returning();
     return user;
   }
