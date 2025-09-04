@@ -149,7 +149,11 @@ export const insertFarmerSchema = createInsertSchema(users).pick({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phone: z.string().min(10, "Valid phone number is required"),
-  email: z.string().email("Please enter a valid email address").optional().or(z.literal("")),
+  email: z.union([
+    z.string().email("Please enter a valid email address"),
+    z.literal(""),
+    z.undefined()
+  ]).optional(),
   password: z.string().min(6, "Password must be at least 6 characters"),
   homeStreet: z.string().min(1, "Home street is required"),
   homeHouseNumber: z.string().min(1, "Home house number is required"),
@@ -185,7 +189,11 @@ export const insertBuyerSchema = createInsertSchema(users).pick({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phone: z.string().min(10, "Valid phone number is required"),
-  email: z.string().email("Please enter a valid email address").optional().or(z.literal("")),
+  email: z.union([
+    z.string().email("Please enter a valid email address"),
+    z.literal(""),
+    z.undefined()
+  ]).optional(),
   password: z.string().min(6, "Password must be at least 6 characters"),
   homeStreet: z.string().min(1, "Home street is required"),
   homeHouseNumber: z.string().min(1, "Home house number is required"),
@@ -207,7 +215,11 @@ export const insertUserSchema = createInsertSchema(users).pick({
   firstName: z.string().min(1, "First name is required"),
   lastName: z.string().min(1, "Last name is required"),
   phone: z.string().min(10, "Valid phone number is required"),
-  email: z.string().email("Please enter a valid email address").optional().or(z.literal("")),
+  email: z.union([
+    z.string().email("Please enter a valid email address"),
+    z.literal(""),
+    z.undefined()
+  ]).optional(),
   password: z.string().min(6, "Password must be at least 6 characters"),
   userType: z.enum(["farmer", "buyer"]).default("buyer"),
 });
