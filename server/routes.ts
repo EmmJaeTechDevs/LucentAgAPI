@@ -50,7 +50,38 @@ async function authenticateToken(req: Request, res: Response, next: any) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Health check endpoint (no logging)
+  /**
+   * @swagger
+   * /api/health:
+   *   get:
+   *     summary: Health Check
+   *     description: Returns the health status of the API server and database connection
+   *     tags: [System]
+   *     responses:
+   *       200:
+   *         description: Service is healthy
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/HealthStatus'
+   *             example:
+   *               status: "ok"
+   *               timestamp: "2024-01-15T10:30:00.000Z"
+   *               server:
+   *                 status: "healthy"
+   *                 uptime: 3600
+   *                 memory: { "rss": 25165824, "heapTotal": 16777216, "heapUsed": 12345678 }
+   *                 version: "v18.17.0"
+   *               database:
+   *                 status: "healthy"
+   *                 connected: true
+   *       503:
+   *         description: Service is degraded (database issues)
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/HealthStatus'
+   */
   app.get('/api/health', async (req, res) => {
     try {
       const healthCheck = {
@@ -94,7 +125,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes with specific logging
   app.use('/api/auth', authLoggingMiddleware);
   
-  // Register user
+  /**
+   * @swagger
+   * /api/auth/register:
+   *   post:
+   *     summary: Register General User (Legacy)
+   *     description: Register a general user account. Use /api/auth/register-farmer or /api/auth/register-buyer instead.
+   *     tags: [Authentication]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [firstName, lastName, phone, password, userType]
+   *             properties:
+   *               firstName:
+   *                 type: string
+   *                 description: User's first name
+   *                 example: "John"
+   *               lastName:
+   *                 type: string
+   *                 description: User's last name
+   *                 example: "Doe"
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 description: User's email address (optional)
+   *                 example: "john.doe@example.com"
+   *               phone:
+   *                 type: string
+   *                 description: User's phone number
+   *                 example: "+2348123456789"
+   *               password:
+   *                 type: string
+   *                 minLength: 6
+   *                 description: User's password
+   *                 example: "securepass123"
+   *               userType:
+   *                 type: string
+   *                 enum: [farmer, buyer]
+   *                 description: Type of user account
+   *                 example: "buyer"
+   *     responses:
+   *       201:
+   *         description: User registered successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "User registered successfully. Please verify your phone and email."
+   *                 userId:
+   *                   type: string
+   *                   format: uuid
+   *                   example: "e1234567-e89b-12d3-a456-426614174000"
+   *       400:
+   *         description: Validation error or user already exists
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
   app.post('/api/auth/register', async (req, res, next) => {
     try {
       const validatedData = insertUserSchema.parse(req.body);
@@ -133,7 +227,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Register farmer with detailed address information
+  /**
+   * @swagger
+   * /api/auth/register-farmer:
+   *   post:
+   *     summary: Register Farmer Account
+   *     description: Register a farmer account with detailed home and farm address information
+   *     tags: [Authentication, Farmers]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [userType, firstName, lastName, phone, password, homeStreet, homeHouseNumber, homeBusStop, homeLocalGov, homeState, farmStreet, farmHouseNumber, farmBusStop, farmLocalGov, farmState]
+   *             properties:
+   *               userType:
+   *                 type: string
+   *                 enum: [farmer]
+   *                 example: "farmer"
+   *               firstName:
+   *                 type: string
+   *                 example: "David"
+   *               lastName:
+   *                 type: string
+   *                 example: "Farm"
+   *               phone:
+   *                 type: string
+   *                 example: "+2348123456789"
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 description: Optional email address
+   *                 example: "david@farm.com"
+   *               password:
+   *                 type: string
+   *                 minLength: 6
+   *                 example: "farmpass123"
+   *               homeStreet:
+   *                 type: string
+   *                 example: "Farm Home Street"
+   *               homeHouseNumber:
+   *                 type: string
+   *                 example: "12A"
+   *               homeAdditionalDesc:
+   *                 type: string
+   *                 description: Optional additional home address description
+   *                 example: "Near the market"
+   *               homeBusStop:
+   *                 type: string
+   *                 example: "Central Market"
+   *               homeLocalGov:
+   *                 type: string
+   *                 example: "Ikeja"
+   *               homePostcode:
+   *                 type: string
+   *                 description: Optional postcode
+   *                 example: "100001"
+   *               homeState:
+   *                 type: string
+   *                 example: "Lagos"
+   *               homeCountry:
+   *                 type: string
+   *                 default: "Nigeria"
+   *                 example: "Nigeria"
+   *               farmStreet:
+   *                 type: string
+   *                 example: "Farm Land Road"
+   *               farmHouseNumber:
+   *                 type: string
+   *                 example: "Plot 5"
+   *               farmAdditionalDesc:
+   *                 type: string
+   *                 description: Optional additional farm address description
+   *                 example: "Behind the hill"
+   *               farmBusStop:
+   *                 type: string
+   *                 example: "Farm Gate"
+   *               farmLocalGov:
+   *                 type: string
+   *                 example: "Ikorodu"
+   *               farmPostcode:
+   *                 type: string
+   *                 description: Optional farm postcode
+   *                 example: "100002"
+   *               farmState:
+   *                 type: string
+   *                 example: "Lagos"
+   *               farmCountry:
+   *                 type: string
+   *                 default: "Nigeria"
+   *                 example: "Nigeria"
+   *     responses:
+   *       201:
+   *         description: Farmer registered successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Farmer registered successfully. Please verify your phone number and email address."
+   *                 userId:
+   *                   type: string
+   *                   format: uuid
+   *                 userType:
+   *                   type: string
+   *                   example: "farmer"
+   *       400:
+   *         description: Validation error or user already exists
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   *             example:
+   *               message: "You are not able to proceed because the following mandatory fields are empty: farmStreet, farmHouseNumber. Please fill in the required information to proceed."
+   *               missingFields: ["farmStreet", "farmHouseNumber"]
+   */
   app.post('/api/auth/register-farmer', async (req, res, next) => {
     try {
       const validatedData = insertFarmerSchema.parse(req.body);
@@ -190,7 +401,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Register buyer with address information
+  /**
+   * @swagger
+   * /api/auth/register-buyer:
+   *   post:
+   *     summary: Register Buyer Account
+   *     description: Register a buyer account with home address information. Email is optional - if provided, email verification is used; otherwise SMS verification is used.
+   *     tags: [Authentication, Buyers]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [userType, firstName, lastName, phone, password, homeStreet, homeHouseNumber, homeBusStop, homeLocalGov, homeState]
+   *             properties:
+   *               userType:
+   *                 type: string
+   *                 enum: [buyer]
+   *                 example: "buyer"
+   *               firstName:
+   *                 type: string
+   *                 example: "Sarah"
+   *               lastName:
+   *                 type: string
+   *                 example: "Customer"
+   *               phone:
+   *                 type: string
+   *                 example: "+2348987654321"
+   *               email:
+   *                 type: string
+   *                 format: email
+   *                 description: Optional email address. If provided, email verification is used instead of SMS.
+   *                 example: "sarah@buyer.com"
+   *               password:
+   *                 type: string
+   *                 minLength: 6
+   *                 example: "buyerpass123"
+   *               homeStreet:
+   *                 type: string
+   *                 example: "Shopping Street"
+   *               homeHouseNumber:
+   *                 type: string
+   *                 example: "45B"
+   *               homeAdditionalDesc:
+   *                 type: string
+   *                 description: Optional additional home address description
+   *                 example: "Opposite the mall"
+   *               homeBusStop:
+   *                 type: string
+   *                 example: "Mall Junction"
+   *               homeLocalGov:
+   *                 type: string
+   *                 example: "Victoria Island"
+   *               homePostcode:
+   *                 type: string
+   *                 description: Optional postcode
+   *                 example: "101001"
+   *               homeState:
+   *                 type: string
+   *                 example: "Lagos"
+   *               homeCountry:
+   *                 type: string
+   *                 default: "Nigeria"
+   *                 example: "Nigeria"
+   *     responses:
+   *       201:
+   *         description: Buyer registered successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Buyer registered successfully. A verification email has been sent to your email address."
+   *                 userId:
+   *                   type: string
+   *                   format: uuid
+   *                 userType:
+   *                   type: string
+   *                   example: "buyer"
+   *                 verificationMethod:
+   *                   type: string
+   *                   enum: [email, sms]
+   *                   example: "email"
+   *       400:
+   *         description: Validation error or user already exists
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
   app.post('/api/auth/register-buyer', async (req, res, next) => {
     try {
       const validatedData = insertBuyerSchema.parse(req.body);
@@ -249,7 +551,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Login user
+  /**
+   * @swagger
+   * /api/auth/login:
+   *   post:
+   *     summary: User Login
+   *     description: Authenticate user with phone/email and password. Returns JWT token and user info.
+   *     tags: [Authentication]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [identifier, password]
+   *             properties:
+   *               identifier:
+   *                 type: string
+   *                 description: Phone number or email address
+   *                 example: "+2348123456789"
+   *               password:
+   *                 type: string
+   *                 minLength: 6
+   *                 description: User password
+   *                 example: "userpass123"
+   *     responses:
+   *       200:
+   *         description: Login successful
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Login successful"
+   *                 token:
+   *                   type: string
+   *                   description: JWT authentication token
+   *                   example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+   *                 user:
+   *                   $ref: '#/components/schemas/User'
+   *       401:
+   *         description: Invalid credentials
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Invalid credentials"
+   *       403:
+   *         description: Account not verified
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Account not verified. Please verify your phone and email."
+   *                 userId:
+   *                   type: string
+   *                   format: uuid
+   */
   app.post('/api/auth/login', async (req, res, next) => {
     try {
       const { identifier, password } = loginSchema.parse(req.body);
@@ -288,7 +654,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Request OTP
+  /**
+   * @swagger
+   * /api/auth/request-otp:
+   *   post:
+   *     summary: Request OTP Code
+   *     description: Request a new OTP code for verification purposes
+   *     tags: [Authentication, OTP]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [userId, type, purpose]
+   *             properties:
+   *               userId:
+   *                 type: string
+   *                 format: uuid
+   *                 description: User ID
+   *                 example: "e1234567-e89b-12d3-a456-426614174000"
+   *               type:
+   *                 type: string
+   *                 enum: [sms, email]
+   *                 description: OTP delivery method
+   *                 example: "sms"
+   *               purpose:
+   *                 type: string
+   *                 enum: [verification, login, password_reset]
+   *                 description: Purpose of the OTP
+   *                 example: "verification"
+   *     responses:
+   *       200:
+   *         description: OTP sent successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "OTP sent successfully via sms"
+   *       404:
+   *         description: User not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   *       400:
+   *         description: Validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
   app.post('/api/auth/request-otp', async (req, res, next) => {
     try {
       const { userId, type, purpose } = requestOtpSchema.parse(req.body);
@@ -310,7 +729,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Verify OTP
+  /**
+   * @swagger
+   * /api/auth/verify-otp:
+   *   post:
+   *     summary: Verify OTP Code
+   *     description: Verify OTP code for account verification. This completes the user verification process.
+   *     tags: [Authentication, OTP]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [userId, code, type]
+   *             properties:
+   *               userId:
+   *                 type: string
+   *                 format: uuid
+   *                 description: User ID from registration response
+   *                 example: "e1234567-e89b-12d3-a456-426614174000"
+   *               code:
+   *                 type: string
+   *                 minLength: 6
+   *                 maxLength: 6
+   *                 pattern: '^[0-9]{6}$'
+   *                 description: 6-digit OTP code received via SMS or email
+   *                 example: "123456"
+   *               type:
+   *                 type: string
+   *                 enum: [sms, email]
+   *                 description: OTP delivery method that was used
+   *                 example: "sms"
+   *     responses:
+   *       200:
+   *         description: OTP verified successfully, user account is now verified
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "OTP verified successfully"
+   *       400:
+   *         description: Invalid or expired OTP code
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Invalid or expired OTP code"
+   */
   app.post('/api/auth/verify-otp', async (req, res, next) => {
     try {
       const { userId, code, type } = verifyOtpSchema.parse(req.body);
@@ -335,7 +807,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Logout
+  /**
+   * @swagger
+   * /api/auth/logout:
+   *   post:
+   *     summary: User Logout
+   *     description: Invalidate the current session token and log out the user
+   *     tags: [Authentication]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Logout successful
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Logged out successfully"
+   *       401:
+   *         description: Unauthorized - token required
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Access token required"
+   */
   app.post('/api/auth/logout', authenticateToken, async (req, res, next) => {
     try {
       const authHeader = req.headers['authorization'];
@@ -354,7 +856,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // API routes with logging
   app.use('/api', apiLoggingMiddleware);
 
-  // Get user profile
+  /**
+   * @swagger
+   * /api/users/profile:
+   *   get:
+   *     summary: Get User Profile
+   *     description: Get current authenticated user's profile information
+   *     tags: [Users]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: User profile retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 id:
+   *                   type: string
+   *                   format: uuid
+   *                 username:
+   *                   type: string
+   *                 email:
+   *                   type: string
+   *                   format: email
+   *                   nullable: true
+   *                 phone:
+   *                   type: string
+   *                 isVerified:
+   *                   type: boolean
+   *       401:
+   *         description: Unauthorized - token required or invalid
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Access token required"
+   */
   app.get('/api/users/profile', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
@@ -370,7 +912,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Dashboard stats (protected)
+  /**
+   * @swagger
+   * /api/dashboard/stats:
+   *   get:
+   *     summary: Get Dashboard Statistics
+   *     description: Get system statistics including user counts, sessions, and API usage
+   *     tags: [Dashboard]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Dashboard statistics retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 totalUsers:
+   *                   type: integer
+   *                   description: Total number of registered users
+   *                   example: 150
+   *                 activeSessions:
+   *                   type: integer
+   *                   description: Number of active user sessions
+   *                   example: 25
+   *                 otpSentToday:
+   *                   type: integer
+   *                   description: OTP codes sent today
+   *                   example: 45
+   *                 apiErrorsToday:
+   *                   type: integer
+   *                   description: API errors logged today
+   *                   example: 3
+   *       401:
+   *         description: Unauthorized - token required or invalid
+   */
   app.get('/api/dashboard/stats', authenticateToken, async (req, res, next) => {
     try {
       const stats = await storage.getDashboardStats();
@@ -380,7 +957,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Recent activity (protected)
+  /**
+   * @swagger
+   * /api/dashboard/activity:
+   *   get:
+   *     summary: Get Recent Activity
+   *     description: Get recent API activity and user interactions
+   *     tags: [Dashboard]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Recent activity retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   method:
+   *                     type: string
+   *                     example: "POST"
+   *                   url:
+   *                     type: string
+   *                     example: "/api/auth/login"
+   *                   statusCode:
+   *                     type: integer
+   *                     example: 200
+   *                   responseTime:
+   *                     type: integer
+   *                     description: Response time in milliseconds
+   *                     example: 150
+   *                   createdAt:
+   *                     type: string
+   *                     format: date-time
+   *       401:
+   *         description: Unauthorized - token required or invalid
+   */
   app.get('/api/dashboard/activity', authenticateToken, async (req, res, next) => {
     try {
       const activity = await storage.getRecentActivity(10);
@@ -390,7 +1006,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // HTTP logs (protected)
+  /**
+   * @swagger
+   * /api/logs/http:
+   *   get:
+   *     summary: Get HTTP Request Logs
+   *     description: Get paginated HTTP request logs for monitoring and debugging
+   *     tags: [Logs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *         description: Page number for pagination
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 50
+   *         description: Number of logs per page
+   *     responses:
+   *       200:
+   *         description: HTTP logs retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   method:
+   *                     type: string
+   *                     example: "POST"
+   *                   url:
+   *                     type: string
+   *                     example: "/api/auth/register"
+   *                   statusCode:
+   *                     type: integer
+   *                     example: 201
+   *                   responseTime:
+   *                     type: integer
+   *                     description: Response time in milliseconds
+   *                   ipAddress:
+   *                     type: string
+   *                     example: "192.168.1.1"
+   *                   userAgent:
+   *                     type: string
+   *                   createdAt:
+   *                     type: string
+   *                     format: date-time
+   *       401:
+   *         description: Unauthorized - token required or invalid
+   */
   app.get('/api/logs/http', authenticateToken, async (req, res, next) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
@@ -404,7 +1079,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Error logs (protected)
+  /**
+   * @swagger
+   * /api/logs/errors:
+   *   get:
+   *     summary: Get Error Logs
+   *     description: Get paginated error logs for debugging and monitoring system issues
+   *     tags: [Logs]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: page
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *         description: Page number for pagination
+   *       - in: query
+   *         name: limit
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 50
+   *         description: Number of error logs per page
+   *     responses:
+   *       200:
+   *         description: Error logs retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   message:
+   *                     type: string
+   *                     description: Error message
+   *                     example: "Database connection failed"
+   *                   stack:
+   *                     type: string
+   *                     description: Error stack trace
+   *                   route:
+   *                     type: string
+   *                     example: "/api/auth/login"
+   *                   method:
+   *                     type: string
+   *                     example: "POST"
+   *                   statusCode:
+   *                     type: integer
+   *                     example: 500
+   *                   ipAddress:
+   *                     type: string
+   *                     example: "192.168.1.1"
+   *                   userAgent:
+   *                     type: string
+   *                   createdAt:
+   *                     type: string
+   *                     format: date-time
+   *       401:
+   *         description: Unauthorized - token required or invalid
+   */
   app.get('/api/logs/errors', authenticateToken, async (req, res, next) => {
     try {
       const page = parseInt(req.query.page as string) || 1;

@@ -1,4 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
+import swaggerJSDoc from 'swagger-jsdoc';
+import swaggerUi from 'swagger-ui-express';
 import { registerRoutes } from "./routes";
 
 const app = express();
@@ -34,6 +36,87 @@ app.use((req, res, next) => {
   });
 
   next();
+});
+
+// Swagger configuration
+const swaggerOptions = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Lucent Ag API',
+      version: '1.0.0',
+      description: 'API-only backend for Lucent Ag agricultural platform supporting farmers and buyers with comprehensive registration, authentication, and OTP verification',
+      contact: {
+        name: 'Lucent Ag API Support',
+      },
+    },
+    servers: [
+      {
+        url: process.env.NODE_ENV === 'production' 
+          ? 'https://your-production-domain.com'
+          : `http://localhost:${parseInt(process.env.PORT || '5000', 10)}`,
+        description: process.env.NODE_ENV === 'production' ? 'Production server' : 'Development server',
+      },
+    ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT token obtained from login endpoint',
+        },
+      },
+      schemas: {
+        User: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', format: 'uuid', description: 'User unique identifier' },
+            firstName: { type: 'string', description: 'User first name' },
+            lastName: { type: 'string', description: 'User last name' },
+            email: { type: 'string', format: 'email', nullable: true, description: 'User email address' },
+            phone: { type: 'string', description: 'User phone number' },
+            userType: { type: 'string', enum: ['farmer', 'buyer'], description: 'Type of user account' },
+            isVerified: { type: 'boolean', description: 'Whether user has completed verification' },
+            createdAt: { type: 'string', format: 'date-time', description: 'Account creation timestamp' },
+          },
+        },
+        Error: {
+          type: 'object',
+          properties: {
+            message: { type: 'string', description: 'Error message' },
+            errors: { type: 'array', items: { type: 'object' }, description: 'Validation errors' },
+            missingFields: { type: 'array', items: { type: 'string' }, description: 'Missing required fields' },
+          },
+        },
+        HealthStatus: {
+          type: 'object',
+          properties: {
+            status: { type: 'string', description: 'Service health status' },
+            timestamp: { type: 'string', format: 'date-time', description: 'Health check timestamp' },
+            uptime: { type: 'string', description: 'Server uptime' },
+            database: { type: 'string', description: 'Database connection status' },
+            memory: { type: 'object', description: 'Memory usage statistics' },
+          },
+        },
+      },
+    },
+  },
+  apis: ['./server/routes.ts'], // Path to the API routes
+};
+
+const swaggerSpec = swaggerJSDoc(swaggerOptions);
+
+// Serve Swagger UI at /api-docs
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Lucent Ag API Documentation',
+}));
+
+// Serve swagger.json at /api-docs.json for external tools
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
 });
 
 (async () => {
