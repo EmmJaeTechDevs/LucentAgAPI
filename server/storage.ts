@@ -6,6 +6,8 @@ import {
   sessions,
   type User, 
   type InsertUser,
+  type InsertFarmer,
+  type InsertBuyer,
   type OtpCode,
   type InsertOtpCode,
   type HttpLog,
@@ -21,11 +23,12 @@ import { eq, and, desc, count, gte, lt } from "drizzle-orm";
 export interface IStorage {
   // User methods
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getUserByPhone(phone: string): Promise<User | undefined>;
   getUserByIdentifier(identifier: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  createFarmer(farmer: InsertFarmer): Promise<User>;
+  createBuyer(buyer: InsertBuyer): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
   
   // OTP methods
@@ -66,12 +69,9 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user || undefined;
-  }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
+    if (!email) return undefined;
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user || undefined;
   }
@@ -96,6 +96,22 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .insert(users)
       .values(insertUser)
+      .returning();
+    return user;
+  }
+
+  async createFarmer(insertFarmer: InsertFarmer): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertFarmer)
+      .returning();
+    return user;
+  }
+
+  async createBuyer(insertBuyer: InsertBuyer): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(insertBuyer)
       .returning();
     return user;
   }

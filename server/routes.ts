@@ -8,7 +8,9 @@ import {
   loginSchema, 
   verifyOtpSchema, 
   requestOtpSchema, 
-  insertUserSchema 
+  insertUserSchema,
+  insertFarmerSchema,
+  insertBuyerSchema 
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -98,9 +100,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertUserSchema.parse(req.body);
       
       // Check if user already exists
-      const existingUserByEmail = await storage.getUserByEmail(validatedData.email);
       const existingUserByPhone = await storage.getUserByPhone(validatedData.phone);
-      const existingUserByUsername = await storage.getUserByUsername(validatedData.username);
+      let existingUserByEmail = null;
+      if (validatedData.email) {
+        existingUserByEmail = await storage.getUserByEmail(validatedData.email);
+      }
 
       if (existingUserByEmail) {
         return res.status(400).json({ message: 'Email already registered' });
@@ -108,15 +112,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (existingUserByPhone) {
         return res.status(400).json({ message: 'Phone number already registered' });
       }
-      if (existingUserByUsername) {
-        return res.status(400).json({ message: 'Username already taken' });
-      }
 
       const user = await authService.registerUser(validatedData);
       
       // Send verification OTPs
       await otpService.createAndSendOtp(user.id, 'sms', 'verification', user.phone);
-      await otpService.createAndSendOtp(user.id, 'email', 'verification', user.email);
+      if (user.email) {
+        await otpService.createAndSendOtp(user.id, 'email', 'verification', user.email);
+      }
 
       res.status(201).json({ 
         message: 'User registered successfully. Please verify your phone and email.',
@@ -125,6 +128,111 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  // Register farmer with detailed address information
+  app.post('/api/auth/register-farmer', async (req, res, next) => {
+    try {
+      const validatedData = insertFarmerSchema.parse(req.body);
+      
+      // Check if user already exists by phone
+      const existingUserByPhone = await storage.getUserByPhone(validatedData.phone);
+      if (existingUserByPhone) {
+        return res.status(400).json({ message: 'Phone number already registered' });
+      }
+
+      // Check if email exists (if provided)
+      if (validatedData.email) {
+        const existingUserByEmail = await storage.getUserByEmail(validatedData.email);
+        if (existingUserByEmail) {
+          return res.status(400).json({ message: 'Email already registered' });
+        }
+      }
+
+      // Create farmer user
+      const farmer = await storage.createFarmer(validatedData);
+      
+      // Send verification OTPs
+      await otpService.createAndSendOtp(farmer.id, 'sms', 'verification', farmer.phone);
+      if (farmer.email) {
+        await otpService.createAndSendOtp(farmer.id, 'email', 'verification', farmer.email);
+      }
+
+      const verificationMessage = farmer.email 
+        ? 'Farmer registered successfully. Please verify your phone number and email address.'
+        : 'Farmer registered successfully. Please verify your phone number.';
+
+      res.status(201).json({ 
+        message: verificationMessage,
+        userId: farmer.id,
+        userType: 'farmer'
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const missingFields = error.errors
+          .filter(err => err.message.includes('required'))
+          .map(err => err.path.join('.'));
+        
+        const errorMessage = missingFields.length > 0 
+          ? `You are not able to proceed because the following mandatory fields are empty: ${missingFields.join(', ')}. Please fill in the required information to proceed.`
+          : 'Validation failed';
+
+        return res.status(400).json({ 
+          message: errorMessage, 
+          errors: error.errors,
+          missingFields 
+        });
+      }
+      next(error);
+    }
+  });
+
+  // Register buyer with address information
+  app.post('/api/auth/register-buyer', async (req, res, next) => {
+    try {
+      const validatedData = insertBuyerSchema.parse(req.body);
+      
+      // Check if user already exists
+      const existingUserByPhone = await storage.getUserByPhone(validatedData.phone);
+      if (existingUserByPhone) {
+        return res.status(400).json({ message: 'Phone number already registered' });
+      }
+
+      const existingUserByEmail = await storage.getUserByEmail(validatedData.email);
+      if (existingUserByEmail) {
+        return res.status(400).json({ message: 'Email already registered' });
+      }
+
+      // Create buyer user
+      const buyer = await storage.createBuyer(validatedData);
+      
+      // Send verification OTPs
+      await otpService.createAndSendOtp(buyer.id, 'sms', 'verification', buyer.phone);
+      await otpService.createAndSendOtp(buyer.id, 'email', 'verification', buyer.email!);
+
+      res.status(201).json({ 
+        message: 'Buyer registered successfully. Please verify your phone number and email address.',
+        userId: buyer.id,
+        userType: 'buyer'
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const missingFields = error.errors
+          .filter(err => err.message.includes('required'))
+          .map(err => err.path.join('.'));
+        
+        const errorMessage = missingFields.length > 0 
+          ? `You are not able to proceed because the following mandatory fields are empty: ${missingFields.join(', ')}. Please fill in the required information to proceed.`
+          : 'Validation failed';
+
+        return res.status(400).json({ 
+          message: errorMessage, 
+          errors: error.errors,
+          missingFields 
+        });
       }
       next(error);
     }
@@ -154,9 +262,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         token,
         user: {
           id: user.id,
-          username: user.username,
+          firstName: user.firstName,
+          lastName: user.lastName,
           email: user.email,
           phone: user.phone,
+          userType: user.userType
         }
       });
     } catch (error) {
@@ -177,7 +287,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      const destination = type === 'sms' ? user.phone : user.email;
+      const destination = type === 'sms' ? user.phone : user.email!;
       await otpService.createAndSendOtp(userId, type, purpose, destination);
 
       res.json({ message: `OTP sent successfully via ${type}` });
