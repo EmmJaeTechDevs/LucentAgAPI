@@ -1,17 +1,17 @@
 export class SmsService {
-  private bulkSmsApiToken: string;
-  private bulkSmsSenderId: string;
-  private bulkSmsGateway: string;
+  private ebulkSmsUsername: string;
+  private ebulkSmsApiKey: string;
+  private ebulkSmsSenderId: string;
 
   constructor() {
-    this.bulkSmsApiToken = process.env.BULKSMS_API_TOKEN || '';
-    this.bulkSmsSenderId = process.env.BULKSMS_SENDER_ID || 'LucentAg';
-    this.bulkSmsGateway = process.env.BULKSMS_GATEWAY || 'otp'; // Use OTP gateway for verification codes
+    this.ebulkSmsUsername = process.env.EBULKSMS_USERNAME || '';
+    this.ebulkSmsApiKey = process.env.EBULKSMS_API_KEY || '';
+    this.ebulkSmsSenderId = process.env.EBULKSMS_SENDER_ID || 'LucentAg';
   }
 
   async sendOtp(phoneNumber: string, code: string, purpose: string): Promise<void> {
-    if (!this.bulkSmsApiToken) {
-      console.warn('BulkSMS credentials not configured, OTP would be sent to:', phoneNumber, 'Code:', code);
+    if (!this.ebulkSmsUsername || !this.ebulkSmsApiKey) {
+      console.warn('eBulkSMS credentials not configured, OTP would be sent to:', phoneNumber, 'Code:', code);
       return;
     }
 
@@ -29,24 +29,42 @@ export class SmsService {
           formattedPhone = '234' + phoneNumber;
         }
       } else {
-        formattedPhone = phoneNumber.substring(1); // Remove + prefix for BulkSMS
+        formattedPhone = phoneNumber.substring(1); // Remove + prefix for eBulkSMS
       }
       
-      // Using BulkSMSNigeria REST API
-      const response = await fetch('https://www.bulksmsnigeria.com/api/v2/sms', {
+      // Generate unique message ID for delivery tracking
+      const msgId = `lucent_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+      
+      // Using eBulkSMS REST API
+      const requestBody = {
+        SMS: {
+          auth: {
+            username: this.ebulkSmsUsername,
+            apikey: this.ebulkSmsApiKey
+          },
+          message: {
+            sender: this.ebulkSmsSenderId,
+            messagetext: message,
+            flash: "0" // Normal SMS, not flash
+          },
+          recipients: {
+            gsm: [
+              {
+                msidn: formattedPhone,
+                msgid: msgId
+              }
+            ]
+          },
+          dndsender: "0" // Disable DND option
+        }
+      };
+      
+      const response = await fetch('https://api.ebulksms.com/sendsms.json', {
         method: 'POST',
         headers: {
-          'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          from: this.bulkSmsSenderId,
-          to: formattedPhone,
-          body: message,
-          api_token: this.bulkSmsApiToken,
-          gateway: this.bulkSmsGateway,
-          append_sender: 'hosted', // Append sender ID if needed
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -58,19 +76,20 @@ export class SmsService {
           errorData = { message: errorText || 'Unknown error', status: response.status };
         }
         
-        console.error('BulkSMS API Error:', {
+        console.error('eBulkSMS API Error:', {
           status: response.status,
           statusText: response.statusText,
           errorData: errorData,
           phone: formattedPhone,
-          sender: this.bulkSmsSenderId
+          sender: this.ebulkSmsSenderId,
+          msgId: msgId
         });
         
-        throw new Error(`SMS send failed (${response.status}): ${errorData.error?.message || errorData.message || response.statusText}`);
+        throw new Error(`SMS send failed (${response.status}): ${errorData.response?.status || errorData.message || response.statusText}`);
       }
 
       const responseData = await response.json();
-      console.log(`OTP sent successfully to ${phoneNumber}:`, responseData);
+      console.log(`OTP sent successfully to ${phoneNumber} (msgId: ${msgId}):`, responseData);
     } catch (error) {
       console.error('Failed to send SMS:', error);
       throw new Error('Failed to send SMS verification code');
