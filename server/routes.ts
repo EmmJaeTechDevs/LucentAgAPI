@@ -209,14 +209,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const user = await authService.registerUser(validatedData);
       
-      // Send verification OTPs
+      // Send verification OTP via SMS only
       await otpService.createAndSendOtp(user.id, 'sms', 'verification', user.phone);
-      if (user.email) {
-        await otpService.createAndSendOtp(user.id, 'email', 'verification', user.email);
-      }
 
       res.status(201).json({ 
-        message: 'User registered successfully. Please verify your phone and email.',
+        message: 'User registered successfully. Please verify your phone number.',
         userId: user.id 
       });
     } catch (error) {
@@ -366,15 +363,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create farmer user
       const farmer = await storage.createFarmer(validatedData);
       
-      // Send verification OTPs
+      // Send verification OTP via SMS only
       await otpService.createAndSendOtp(farmer.id, 'sms', 'verification', farmer.phone);
-      if (farmer.email) {
-        await otpService.createAndSendOtp(farmer.id, 'email', 'verification', farmer.email);
-      }
 
-      const verificationMessage = farmer.email 
-        ? 'Farmer registered successfully. Please verify your phone number and email address.'
-        : 'Farmer registered successfully. Please verify your phone number.';
+      const verificationMessage = 'Farmer registered successfully. Please verify your phone number.';
 
       res.status(201).json({ 
         message: verificationMessage,
@@ -514,22 +506,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create buyer user
       const buyer = await storage.createBuyer(validatedData);
       
-      // Send verification - either email OR SMS based on what's provided
-      if (buyer.email) {
-        await otpService.createAndSendOtp(buyer.id, 'email', 'verification', buyer.email);
-      } else {
-        await otpService.createAndSendOtp(buyer.id, 'sms', 'verification', buyer.phone);
-      }
+      // Send verification OTP via SMS only
+      await otpService.createAndSendOtp(buyer.id, 'sms', 'verification', buyer.phone);
 
-      const verificationMessage = buyer.email 
-        ? 'Buyer registered successfully. A verification email has been sent to your email address. Please click the verification link to complete your registration.'
-        : 'Buyer registered successfully. A verification SMS has been sent to your phone number. Please enter the code to complete your registration.';
+      const verificationMessage = 'Buyer registered successfully. A verification SMS has been sent to your phone number. Please enter the code to complete your registration.';
 
       res.status(201).json({ 
         message: verificationMessage,
         userId: buyer.id,
         userType: 'buyer',
-        verificationMethod: buyer.email ? 'email' : 'sms'
+        verificationMethod: 'sms'
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -627,7 +613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!user.isVerified) {
         return res.status(403).json({ 
-          message: 'Account not verified. Please verify your phone and email.',
+          message: 'Account not verified. Please verify your phone number.',
           userId: user.id 
         });
       }
@@ -676,8 +662,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 example: "e1234567-e89b-12d3-a456-426614174000"
    *               type:
    *                 type: string
-   *                 enum: [sms, email]
-   *                 description: OTP delivery method
+   *                 enum: [sms]
+   *                 description: OTP delivery method (SMS only)
    *                 example: "sms"
    *               purpose:
    *                 type: string
@@ -717,8 +703,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: 'User not found' });
       }
 
-      const destination = type === 'sms' ? user.phone : user.email!;
-      await otpService.createAndSendOtp(userId, type, purpose, destination);
+      // Only SMS OTP is supported
+      if (type !== 'sms') {
+        return res.status(400).json({ message: 'Only SMS OTP is supported' });
+      }
+      
+      await otpService.createAndSendOtp(userId, type, purpose, user.phone);
 
       res.json({ message: `OTP sent successfully via ${type}` });
     } catch (error) {
@@ -754,12 +744,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 minLength: 6
    *                 maxLength: 6
    *                 pattern: '^[0-9]{6}$'
-   *                 description: 6-digit OTP code received via SMS or email
+   *                 description: 6-digit OTP code received via SMS
    *                 example: "123456"
    *               type:
    *                 type: string
-   *                 enum: [sms, email]
-   *                 description: OTP delivery method that was used
+   *                 enum: [sms]
+   *                 description: OTP delivery method (SMS only)
    *                 example: "sms"
    *     responses:
    *       200:

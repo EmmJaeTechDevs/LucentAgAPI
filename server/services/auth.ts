@@ -69,10 +69,12 @@ export class AuthService {
   }
 
   async registerUser(userData: {
-    username: string;
-    email: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
     phone: string;
     password: string;
+    userType: 'farmer' | 'buyer';
   }): Promise<User> {
     const hashedPassword = await this.hashPassword(userData.password);
     
