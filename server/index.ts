@@ -1,9 +1,21 @@
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
 import swaggerJSDoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { registerRoutes } from "./routes";
 
 const app = express();
+
+// CORS configuration to allow requests from React apps
+app.use(cors({
+  origin: process.env.NODE_ENV === 'production' 
+    ? ['https://your-frontend-domain.com'] // Add your production frontend URL here
+    : ['http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000', 'http://127.0.0.1:5173'], // Common React dev server ports
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
