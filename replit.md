@@ -48,4 +48,4 @@ Preferred communication style: Simple, everyday language.
 
 **Health Monitoring**: Built-in health check endpoint (`/api/health`) that monitors server uptime, memory usage, and database connectivity status.
 
-**Replit Integration**: Development environment optimized for Replit with streamlined API-only deployment.
+**Replit Integration**: Development environment optimized for Replit with streamlined API-only deployment. The project includes a minimal frontend structure required for the build process, but remains functionally a backend-only API.
