@@ -675,7 +675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!loginResult.success) {
         // Handle different error scenarios with appropriate status codes
-        if (loginResult.error?.includes('Too many failed attempts')) {
+        if (loginResult.errorType === 'rate_limit_exceeded') {
           return res.status(429).json({ 
             message: loginResult.error,
             type: 'rate_limit_exceeded'
@@ -1156,6 +1156,104 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const statusCode = result.valid ? 200 : 400;
       res.status(statusCode).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/auth/rate-limit-info/{identifier}:
+   *   get:
+   *     summary: Get Rate Limit Information (Admin)
+   *     description: Get current rate limiting status for a specific identifier
+   *     tags: [Authentication, Rate Limiting]
+   *     parameters:
+   *       - in: path
+   *         name: identifier
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Phone number or email to check
+   *         example: "test@example.com"
+   *     responses:
+   *       200:
+   *         description: Rate limit information
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 identifier:
+   *                   type: string
+   *                   example: "test@example.com"
+   *                 attempts:
+   *                   type: number
+   *                   example: 3
+   *                 isLocked:
+   *                   type: boolean
+   *                   example: false
+   *                 lockTimeRemaining:
+   *                   type: number
+   *                   description: Minutes remaining until unlock
+   *                   example: 12
+   *                 maxAttempts:
+   *                   type: number
+   *                   example: 5
+   *                 lockTimeMinutes:
+   *                   type: number
+   *                   example: 15
+   */
+  app.get('/api/auth/rate-limit-info/:identifier', async (req, res, next) => {
+    try {
+      const { identifier } = req.params;
+      
+      if (!identifier) {
+        return res.status(400).json({ 
+          message: 'Identifier is required' 
+        });
+      }
+      
+      const rateLimitInfo = authService.getRateLimitInfo(identifier);
+      
+      res.json({
+        identifier,
+        ...rateLimitInfo
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/auth/rate-limit-config:
+   *   get:
+   *     summary: Get Rate Limiting Configuration
+   *     description: Get current rate limiting settings
+   *     tags: [Authentication, Rate Limiting]
+   *     responses:
+   *       200:
+   *         description: Rate limiting configuration
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 maxAttempts:
+   *                   type: number
+   *                   example: 5
+   *                 lockTimeMinutes:
+   *                   type: number
+   *                   example: 15
+   *                 description:
+   *                   type: string
+   *                   example: "Users are locked out for 15 minutes after 5 failed login attempts"
+   */
+  app.get('/api/auth/rate-limit-config', async (req, res, next) => {
+    try {
+      const config = authService.getRateLimitConfig();
+      res.json(config);
     } catch (error) {
       next(error);
     }

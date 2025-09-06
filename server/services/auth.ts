@@ -6,10 +6,13 @@ import { User } from '@shared/schema';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '3d'; // Default to 3 days, configurable via environment
 
-// Rate limiting for login attempts (in-memory for now)
+// Configurable rate limiting for login attempts
+const MAX_LOGIN_ATTEMPTS = parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5');
+const LOCK_TIME_MINUTES = parseInt(process.env.LOCK_TIME_MINUTES || '15');
+const LOCK_TIME = LOCK_TIME_MINUTES * 60 * 1000; // Convert minutes to milliseconds
+
+// Rate limiting storage (in-memory for now)
 const loginAttempts = new Map<string, { attempts: number; lockUntil?: number }>();
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCK_TIME = 15 * 60 * 1000; // 15 minutes
 
 export class AuthService {
   async hashPassword(password: string): Promise<string> {
@@ -76,12 +79,16 @@ export class AuthService {
     await storage.deleteUserSessions(userId);
   }
 
-  async authenticateUser(identifier: string, password: string): Promise<{ user: User | null; error?: string }> {
+  async authenticateUser(identifier: string, password: string): Promise<{ user: User | null; error?: string; errorType?: string }> {
     // Check if identifier is locked due to too many failed attempts
     const attemptRecord = loginAttempts.get(identifier);
     if (attemptRecord?.lockUntil && Date.now() < attemptRecord.lockUntil) {
       const lockTimeRemaining = Math.ceil((attemptRecord.lockUntil - Date.now()) / 60000);
-      return { user: null, error: `Too many failed attempts. Try again in ${lockTimeRemaining} minutes.` };
+      return { 
+        user: null, 
+        error: `Too many failed attempts. Try again in ${lockTimeRemaining} minutes.`,
+        errorType: 'rate_limit_exceeded'
+      };
     }
 
     // Try to find user by email or phone
@@ -141,11 +148,16 @@ export class AuthService {
       isVerified: boolean;
     };
     error?: string;
+    errorType?: string;
   }> {
     const authResult = await this.authenticateUser(identifier, password);
     
     if (!authResult.user) {
-      return { success: false, error: authResult.error || 'Authentication failed' };
+      return { 
+        success: false, 
+        error: authResult.error || 'Authentication failed',
+        errorType: authResult.errorType
+      };
     }
 
     const user = authResult.user;
@@ -197,6 +209,46 @@ export class AuthService {
       ...userData,
       password: hashedPassword,
     });
+  }
+
+  // Helper methods for rate limiting management
+  getRateLimitInfo(identifier: string): {
+    attempts: number;
+    isLocked: boolean;
+    lockTimeRemaining?: number;
+    maxAttempts: number;
+    lockTimeMinutes: number;
+  } {
+    const attemptRecord = loginAttempts.get(identifier);
+    const isLocked = Boolean(attemptRecord?.lockUntil && Date.now() < attemptRecord.lockUntil);
+    const lockTimeRemaining = attemptRecord?.lockUntil && Date.now() < attemptRecord.lockUntil 
+      ? Math.ceil((attemptRecord.lockUntil - Date.now()) / 60000) 
+      : undefined;
+
+    return {
+      attempts: attemptRecord?.attempts || 0,
+      isLocked,
+      lockTimeRemaining,
+      maxAttempts: MAX_LOGIN_ATTEMPTS,
+      lockTimeMinutes: LOCK_TIME_MINUTES
+    };
+  }
+
+  clearRateLimit(identifier: string): void {
+    loginAttempts.delete(identifier);
+  }
+
+  // Method to get current rate limiting configuration
+  getRateLimitConfig(): {
+    maxAttempts: number;
+    lockTimeMinutes: number;
+    description: string;
+  } {
+    return {
+      maxAttempts: MAX_LOGIN_ATTEMPTS,
+      lockTimeMinutes: LOCK_TIME_MINUTES,
+      description: `Users are locked out for ${LOCK_TIME_MINUTES} minutes after ${MAX_LOGIN_ATTEMPTS} failed login attempts`
+    };
   }
 }
 
