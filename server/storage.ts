@@ -4,6 +4,7 @@ import {
   httpLogs, 
   errorLogs, 
   sessions,
+  passwordResetTokens,
   type User, 
   type InsertUser,
   type InsertFarmer,
@@ -15,7 +16,9 @@ import {
   type ErrorLog,
   type InsertErrorLog,
   type Session,
-  type InsertSession
+  type InsertSession,
+  type PasswordResetToken,
+  type InsertPasswordResetToken
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, count, gte, lt } from "drizzle-orm";
@@ -43,6 +46,13 @@ export interface IStorage {
   getSessionByToken(token: string): Promise<Session | undefined>;
   deleteSession(token: string): Promise<void>;
   deleteUserSessions(userId: string): Promise<void>;
+  
+  // Password reset methods
+  createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken>;
+  getValidPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
+  markPasswordResetTokenAsUsed(id: string): Promise<void>;
+  cleanupExpiredPasswordResetTokens(): Promise<void>;
+  updateUserPassword(userId: string, newPassword: string): Promise<User | undefined>;
   
   // Logging methods
   createHttpLog(log: InsertHttpLog): Promise<HttpLog>;
@@ -271,6 +281,52 @@ export class DatabaseStorage implements IStorage {
       .from(httpLogs)
       .orderBy(desc(httpLogs.createdAt))
       .limit(limit);
+  }
+
+  async createPasswordResetToken(token: InsertPasswordResetToken): Promise<PasswordResetToken> {
+    const [resetToken] = await db
+      .insert(passwordResetTokens)
+      .values(token)
+      .returning();
+    return resetToken;
+  }
+
+  async getValidPasswordResetToken(token: string): Promise<PasswordResetToken | undefined> {
+    const [resetToken] = await db
+      .select()
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.token, token),
+          eq(passwordResetTokens.isUsed, false),
+          gte(passwordResetTokens.expiresAt, new Date())
+        )
+      );
+    return resetToken || undefined;
+  }
+
+  async markPasswordResetTokenAsUsed(id: string): Promise<void> {
+    await db
+      .update(passwordResetTokens)
+      .set({ isUsed: true })
+      .where(eq(passwordResetTokens.id, id));
+  }
+
+  async cleanupExpiredPasswordResetTokens(): Promise<void> {
+    const now = new Date();
+    await db
+      .delete(passwordResetTokens)
+      .where(lt(passwordResetTokens.expiresAt, now));
+  }
+
+  async updateUserPassword(userId: string, newPassword: string): Promise<User | undefined> {
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    const [user] = await db
+      .update(users)
+      .set({ password: hashedPassword, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return user || undefined;
   }
 
   async testConnection(): Promise<boolean> {
