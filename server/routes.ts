@@ -4,13 +4,16 @@ import { storage } from "./storage";
 import { authService } from "./services/auth";
 import { otpService } from "./services/otp";
 import { createLoggingMiddleware, createErrorLoggingMiddleware } from "./middleware/logging";
+import { passwordResetService } from "./services/passwordReset";
 import { 
   loginSchema, 
   verifyOtpSchema, 
   requestOtpSchema, 
   insertUserSchema,
   insertFarmerSchema,
-  insertBuyerSchema 
+  insertBuyerSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema 
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -880,6 +883,280 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: 'Validation failed', errors: error.errors });
       }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/auth/forgot-password:
+   *   post:
+   *     summary: Request Password Reset
+   *     description: Initiate password reset process by sending OTP to user's phone or email
+   *     tags: [Authentication, Password Reset]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [identifier]
+   *             properties:
+   *               identifier:
+   *                 type: string
+   *                 description: Phone number or email address
+   *                 example: "+2348123456789"
+   *     responses:
+   *       200:
+   *         description: Password reset instructions sent (or generic success message)
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 message:
+   *                   type: string
+   *                   example: "If an account with this phone number or email exists, we will send verification instructions."
+   *                 userId:
+   *                   type: string
+   *                   description: User ID (for next step - verify OTP)
+   *                   example: "e1234567-e89b-12d3-a456-426614174000"
+   *       400:
+   *         description: Validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
+  app.post('/api/auth/forgot-password', async (req, res, next) => {
+    try {
+      const { identifier } = forgotPasswordSchema.parse(req.body);
+      
+      const result = await passwordResetService.requestPasswordReset(identifier);
+      
+      res.json(result);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/auth/verify-reset-otp:
+   *   post:
+   *     summary: Verify Password Reset OTP
+   *     description: Verify OTP code and receive password reset token
+   *     tags: [Authentication, Password Reset]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [userId, code, type]
+   *             properties:
+   *               userId:
+   *                 type: string
+   *                 format: uuid
+   *                 description: User ID from forgot-password response
+   *                 example: "e1234567-e89b-12d3-a456-426614174000"
+   *               code:
+   *                 type: string
+   *                 pattern: "^[0-9]{6}$"
+   *                 description: 6-digit OTP code
+   *                 example: "123456"
+   *               type:
+   *                 type: string
+   *                 enum: [sms, email]
+   *                 description: OTP delivery method
+   *                 example: "sms"
+   *     responses:
+   *       200:
+   *         description: OTP verified successfully, password reset token provided
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 token:
+   *                   type: string
+   *                   description: Password reset token (valid for 1 hour)
+   *                   example: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+   *                 message:
+   *                   type: string
+   *                   example: "Verification successful. You can now reset your password."
+   *       400:
+   *         description: Invalid or expired OTP code
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
+  app.post('/api/auth/verify-reset-otp', async (req, res, next) => {
+    try {
+      const { userId, code, type } = verifyOtpSchema.parse(req.body);
+      
+      const result = await passwordResetService.verifyResetOtp(userId, code, type);
+      
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: result.message,
+          type: 'verification_failed'
+        });
+      }
+      
+      res.json(result);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/auth/reset-password:
+   *   post:
+   *     summary: Reset Password with Token
+   *     description: Reset user password using valid reset token
+   *     tags: [Authentication, Password Reset]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [token, password, confirmPassword]
+   *             properties:
+   *               token:
+   *                 type: string
+   *                 description: Password reset token from verify-reset-otp
+   *                 example: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+   *               password:
+   *                 type: string
+   *                 minLength: 6
+   *                 description: New password
+   *                 example: "newSecurePassword123"
+   *               confirmPassword:
+   *                 type: string
+   *                 minLength: 6
+   *                 description: Confirm new password (must match password)
+   *                 example: "newSecurePassword123"
+   *     responses:
+   *       200:
+   *         description: Password reset successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 message:
+   *                   type: string
+   *                   example: "Password reset successfully. Please login with your new password."
+   *       400:
+   *         description: Invalid token or password validation error
+   *         content:
+   *           application/json:
+   *             schema:
+   *               $ref: '#/components/schemas/Error'
+   */
+  app.post('/api/auth/reset-password', async (req, res, next) => {
+    try {
+      const { token, password } = resetPasswordSchema.parse(req.body);
+      
+      const result = await passwordResetService.resetPassword(token, password);
+      
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: result.message,
+          type: result.message.includes('expired') ? 'token_expired' : 'reset_failed'
+        });
+      }
+      
+      res.json({ 
+        success: result.success,
+        message: result.message
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/auth/validate-reset-token/{token}:
+   *   get:
+   *     summary: Validate Password Reset Token
+   *     description: Check if a password reset token is valid and not expired
+   *     tags: [Authentication, Password Reset]
+   *     parameters:
+   *       - in: path
+   *         name: token
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Password reset token to validate
+   *         example: "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456"
+   *     responses:
+   *       200:
+   *         description: Token is valid
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 valid:
+   *                   type: boolean
+   *                   example: true
+   *                 message:
+   *                   type: string
+   *                   example: "Token is valid"
+   *       400:
+   *         description: Token is invalid or expired
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 valid:
+   *                   type: boolean
+   *                   example: false
+   *                 message:
+   *                   type: string
+   *                   example: "Invalid or expired reset token"
+   */
+  app.get('/api/auth/validate-reset-token/:token', async (req, res, next) => {
+    try {
+      const { token } = req.params;
+      
+      if (!token) {
+        return res.status(400).json({ 
+          valid: false, 
+          message: 'Token is required' 
+        });
+      }
+      
+      const result = await passwordResetService.validateResetToken(token);
+      
+      const statusCode = result.valid ? 200 : 400;
+      res.status(statusCode).json(result);
+    } catch (error) {
       next(error);
     }
   });

@@ -22,7 +22,11 @@ export class AuthService {
   }
 
   generateJWT(payload: any, expiresIn?: string): string {
-    return jwt.sign(payload, JWT_SECRET as string, { expiresIn: expiresIn || JWT_EXPIRES_IN });
+    const options: jwt.SignOptions = {};
+    if (expiresIn || JWT_EXPIRES_IN) {
+      options.expiresIn = expiresIn || JWT_EXPIRES_IN;
+    }
+    return jwt.sign(payload, JWT_SECRET as string, options);
   }
 
   verifyJWT(token: string): any {
