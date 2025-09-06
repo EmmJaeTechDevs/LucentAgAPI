@@ -22,7 +22,7 @@ export class AuthService {
   }
 
   generateJWT(payload: any, expiresIn?: string): string {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: expiresIn || JWT_EXPIRES_IN });
+    return jwt.sign(payload, JWT_SECRET as string, { expiresIn: expiresIn || JWT_EXPIRES_IN });
   }
 
   verifyJWT(token: string): any {
@@ -83,11 +83,18 @@ export class AuthService {
     // Try to find user by email or phone
     let user: User | null = null;
     
-    // Check if identifier is email format
-    if (identifier.includes('@')) {
-      user = await storage.getUserByEmail(identifier);
-    } else {
-      user = await storage.getUserByPhone(identifier);
+    try {
+      // Check if identifier is email format
+      if (identifier.includes('@')) {
+        const foundUser = await storage.getUserByEmail(identifier);
+        user = foundUser || null;
+      } else {
+        const foundUser = await storage.getUserByPhone(identifier);
+        user = foundUser || null;
+      }
+    } catch (error) {
+      console.error('Error finding user:', error);
+      return { user: null, error: 'Authentication service temporarily unavailable' };
     }
 
     if (!user) {
@@ -147,10 +154,10 @@ export class AuthService {
           id: user.id,
           firstName: user.firstName,
           lastName: user.lastName,
-          email: user.email,
+          email: user.email || undefined,
           phone: user.phone,
           userType: user.userType,
-          isVerified: user.isVerified
+          isVerified: user.isVerified || false
         }
       };
     }
@@ -164,10 +171,10 @@ export class AuthService {
         id: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
-        email: user.email,
+        email: user.email || undefined,
         phone: user.phone,
         userType: user.userType,
-        isVerified: user.isVerified
+        isVerified: user.isVerified || false
       }
     };
   }
