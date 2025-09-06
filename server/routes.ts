@@ -542,7 +542,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * /api/auth/login:
    *   post:
    *     summary: User Login
-   *     description: Authenticate user with phone/email and password. Returns JWT token and user info.
+   *     description: Authenticate user with phone number or email and password. Returns JWT token and comprehensive user info. Supports rate limiting for security.
    *     tags: [Authentication]
    *     requestBody:
    *       required: true
@@ -554,7 +554,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *             properties:
    *               identifier:
    *                 type: string
-   *                 description: Phone number or email address
+   *                 description: Phone number or email address for authentication
    *                 example: "+2348123456789"
    *               password:
    *                 type: string
@@ -572,12 +572,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 message:
    *                   type: string
    *                   example: "Login successful"
+   *                 success:
+   *                   type: boolean
+   *                   example: true
    *                 token:
    *                   type: string
-   *                   description: JWT authentication token
+   *                   description: JWT authentication token (expires in 3 days by default)
    *                   example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+   *                 tokenExpiration:
+   *                   type: string
+   *                   example: "3 days"
    *                 user:
-   *                   $ref: '#/components/schemas/User'
+   *                   type: object
+   *                   properties:
+   *                     userId:
+   *                       type: string
+   *                       format: uuid
+   *                       example: "e1234567-e89b-12d3-a456-426614174000"
+   *                     id:
+   *                       type: string
+   *                       format: uuid
+   *                       description: "Same as userId for backward compatibility"
+   *                     firstName:
+   *                       type: string
+   *                       example: "John"
+   *                     lastName:
+   *                       type: string
+   *                       example: "Doe"
+   *                     fullName:
+   *                       type: string
+   *                       example: "John Doe"
+   *                     email:
+   *                       type: string
+   *                       format: email
+   *                       example: "john@example.com"
+   *                     phone:
+   *                       type: string
+   *                       example: "+2348123456789"
+   *                     userType:
+   *                       type: string
+   *                       enum: [farmer, buyer]
+   *                       example: "buyer"
+   *                     isVerified:
+   *                       type: boolean
+   *                       example: true
    *       401:
    *         description: Invalid credentials
    *         content:
@@ -588,6 +626,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 message:
    *                   type: string
    *                   example: "Invalid credentials"
+   *                 type:
+   *                   type: string
+   *                   example: "invalid_credentials"
    *       403:
    *         description: Account not verified
    *         content:
@@ -597,46 +638,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *               properties:
    *                 message:
    *                   type: string
-   *                   example: "Account not verified. Please verify your phone and email."
-   *                 userId:
+   *                   example: "Account not verified. Please verify your phone number."
+   *                 type:
    *                   type: string
-   *                   format: uuid
+   *                   example: "account_not_verified"
+   *                 user:
+   *                   type: object
+   *                   properties:
+   *                     id:
+   *                       type: string
+   *                       format: uuid
+   *                       example: "e1234567-e89b-12d3-a456-426614174000"
+   *       429:
+   *         description: Too many failed login attempts
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Too many failed attempts. Try again in 15 minutes."
+   *                 type:
+   *                   type: string
+   *                   example: "rate_limit_exceeded"
    */
   app.post('/api/auth/login', async (req, res, next) => {
     try {
       const { identifier, password } = loginSchema.parse(req.body);
       
-      const user = await authService.authenticateUser(identifier, password);
-      if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-      }
-
-      if (!user.isVerified) {
-        return res.status(403).json({ 
-          message: 'Account not verified. Please verify your phone number.',
-          userId: user.id 
+      // Enhanced login with comprehensive security and error handling
+      const loginResult = await authService.loginUser(identifier, password);
+      
+      if (!loginResult.success) {
+        // Handle different error scenarios with appropriate status codes
+        if (loginResult.error?.includes('Too many failed attempts')) {
+          return res.status(429).json({ 
+            message: loginResult.error,
+            type: 'rate_limit_exceeded'
+          });
+        }
+        
+        if (loginResult.error?.includes('not verified')) {
+          return res.status(403).json({ 
+            message: loginResult.error,
+            type: 'account_not_verified',
+            user: loginResult.user
+          });
+        }
+        
+        return res.status(401).json({ 
+          message: loginResult.error || 'Authentication failed',
+          type: 'invalid_credentials'
         });
       }
 
-      const token = await authService.createSession(user.id);
-      
+      // Successful login response with comprehensive user information
       res.json({ 
         message: 'Login successful',
-        token,
+        success: true,
+        token: loginResult.token,
+        tokenExpiration: '3 days', // Informational for frontend
         user: {
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          phone: user.phone,
-          userType: user.userType
+          userId: loginResult.user!.id,
+          id: loginResult.user!.id, // Also include as 'id' for backward compatibility
+          firstName: loginResult.user!.firstName,
+          lastName: loginResult.user!.lastName,
+          fullName: `${loginResult.user!.firstName} ${loginResult.user!.lastName}`,
+          email: loginResult.user!.email,
+          phone: loginResult.user!.phone,
+          userType: loginResult.user!.userType,
+          isVerified: loginResult.user!.isVerified
         }
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+        return res.status(400).json({ 
+          message: 'Invalid request data', 
+          type: 'validation_error',
+          errors: error.errors 
+        });
       }
-      next(error);
+      console.error('Login error:', error);
+      res.status(500).json({ 
+        message: 'An internal server error occurred',
+        type: 'server_error'
+      });
     }
   });
 
