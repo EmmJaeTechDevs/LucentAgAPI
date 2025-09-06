@@ -84,12 +84,22 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at").default(sql`now()`),
 });
 
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  isUsed: boolean("is_used").default(false),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   otpCodes: many(otpCodes),
   httpLogs: many(httpLogs),
   errorLogs: many(errorLogs),
   sessions: many(sessions),
+  passwordResetTokens: many(passwordResetTokens),
 }));
 
 export const otpCodesRelations = relations(otpCodes, ({ one }) => ({
@@ -116,6 +126,13 @@ export const errorLogsRelations = relations(errorLogs, ({ one }) => ({
 export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, {
     fields: [sessions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const passwordResetTokensRelations = relations(passwordResetTokens, ({ one }) => ({
+  user: one(users, {
+    fields: [passwordResetTokens.userId],
     references: [users.id],
   }),
 }));
@@ -261,6 +278,12 @@ export const insertSessionSchema = createInsertSchema(sessions).pick({
   expiresAt: true,
 });
 
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).pick({
+  userId: true,
+  token: true,
+  expiresAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertFarmer = z.infer<typeof insertFarmerSchema>;
@@ -274,6 +297,8 @@ export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
 export type ErrorLog = typeof errorLogs.$inferSelect;
 export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Session = typeof sessions.$inferSelect;
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 
 // Login schemas
 export const loginSchema = z.object({
@@ -300,6 +325,22 @@ export const requestOtpSchema = z.object({
   purpose: z.enum(["verification", "login", "password_reset"]),
 });
 
+// Password reset schemas
+export const forgotPasswordSchema = z.object({
+  identifier: z.string().min(1, "Phone number or email is required"),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, "Reset token is required"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(6, "Password confirmation is required"),
+}).refine(data => data.password === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
+
 export type LoginData = z.infer<typeof loginSchema>;
 export type VerifyOtpData = z.infer<typeof verifyOtpSchema>;
 export type RequestOtpData = z.infer<typeof requestOtpSchema>;
+export type ForgotPasswordData = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordData = z.infer<typeof resetPasswordSchema>;
