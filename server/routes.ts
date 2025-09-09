@@ -2171,6 +2171,296 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  /**
+   * @swagger
+   * /api/farmer/plants/questions:
+   *   post:
+   *     summary: Get Questions for Selected Plants
+   *     description: Submit an array of plant IDs and get back all questions for those plants
+   *     tags: [Farmer Plants]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [plantIds]
+   *             properties:
+   *               plantIds:
+   *                 type: array
+   *                 items:
+   *                   type: string
+   *                 description: Array of plant IDs to get questions for
+   *                 example: ["plant-tomato", "plant-maize", "plant-cassava"]
+   *     responses:
+   *       200:
+   *         description: Questions retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 questions:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       plantId:
+   *                         type: string
+   *                       plantName:
+   *                         type: string
+   *                       questions:
+   *                         type: array
+   *                         items:
+   *                           type: object
+   *                           properties:
+   *                             id:
+   *                               type: string
+   *                             question:
+   *                               type: string
+   *                             questionType:
+   *                               type: string
+   *                             options:
+   *                               type: array
+   *                             isRequired:
+   *                               type: boolean
+   *                             category:
+   *                               type: string
+   *       400:
+   *         description: Validation error or no plants provided
+   *       401:
+   *         description: Unauthorized - token required
+   *       403:
+   *         description: Only farmers can access this endpoint
+   */
+  app.post('/api/farmer/plants/questions', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Only farmers can access this endpoint' });
+      }
+
+      const { plantIds } = req.body;
+      
+      if (!Array.isArray(plantIds) || plantIds.length === 0) {
+        return res.status(400).json({ message: 'plantIds must be a non-empty array' });
+      }
+
+      // Get all questions for the selected plants
+      const questionsData = [];
+      
+      for (const plantId of plantIds) {
+        const plant = await storage.getPlant(plantId);
+        if (!plant) {
+          continue; // Skip invalid plant IDs
+        }
+        
+        const questions = await storage.getPlantQuestions(plantId);
+        questionsData.push({
+          plantId: plant.id,
+          plantName: plant.name,
+          questions: questions
+        });
+      }
+
+      res.json({ questions: questionsData });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/answers/bulk:
+   *   post:
+   *     summary: Submit Multiple Answers at Once
+   *     description: Submit answers for multiple questions across different plants in a single request
+   *     tags: [Farmer Answers]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [answers]
+   *             properties:
+   *               answers:
+   *                 type: array
+   *                 items:
+   *                   type: object
+   *                   required: [plantId, questionId, answer]
+   *                   properties:
+   *                     plantId:
+   *                       type: string
+   *                       description: ID of the plant the question relates to
+   *                       example: "plant-tomato"
+   *                     questionId:
+   *                       type: string
+   *                       description: ID of the question being answered
+   *                       example: "q-tomato-processing"
+   *                     answer:
+   *                       oneOf:
+   *                         - type: string
+   *                           description: Single answer for text or single-choice questions
+   *                           example: "We use traditional sun drying methods"
+   *                         - type: array
+   *                           items:
+   *                             type: string
+   *                           description: Multiple answers for checkbox questions
+   *                           example: ["drying", "canning", "fresh_sale"]
+   *                     customAnswer:
+   *                       type: string
+   *                       description: Additional details for "Others" option
+   *                       example: "We also use a special family recipe for preservation"
+   *                 example:
+   *                   - plantId: "plant-tomato"
+   *                     questionId: "q-tomato-processing"
+   *                     answer: ["fresh_sale", "sun_drying"]
+   *                     customAnswer: "We also make tomato paste for local market"
+   *                   - plantId: "plant-maize"
+   *                     questionId: "q-maize-storage"
+   *                     answer: "traditional_barn"
+   *     responses:
+   *       200:
+   *         description: All answers submitted successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "All answers submitted successfully"
+   *                 processed:
+   *                   type: number
+   *                   description: Number of answers processed
+   *                   example: 5
+   *                 results:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       plantId:
+   *                         type: string
+   *                       questionId:
+   *                         type: string
+   *                       status:
+   *                         type: string
+   *                         enum: [success, error, skipped]
+   *                       message:
+   *                         type: string
+   *       400:
+   *         description: Validation error
+   *       401:
+   *         description: Unauthorized - token required
+   *       403:
+   *         description: Only farmers can submit answers
+   */
+  app.post('/api/farmer/answers/bulk', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Only farmers can submit answers' });
+      }
+
+      const { answers } = req.body;
+      
+      if (!Array.isArray(answers) || answers.length === 0) {
+        return res.status(400).json({ message: 'answers must be a non-empty array' });
+      }
+
+      // Get farmer's plants to validate they can answer questions for these plants
+      const farmerPlants = await storage.getFarmerPlants(user.id);
+      const farmerPlantIds = farmerPlants.map(fp => fp.plantId);
+
+      const results = [];
+      let processedCount = 0;
+
+      for (const answerData of answers) {
+        try {
+          const { plantId, questionId, answer, customAnswer } = answerData;
+
+          // Validate required fields
+          if (!plantId || !questionId || answer === undefined) {
+            results.push({
+              plantId,
+              questionId,
+              status: 'error',
+              message: 'Missing required fields: plantId, questionId, or answer'
+            });
+            continue;
+          }
+
+          // Check if farmer has selected this plant
+          if (!farmerPlantIds.includes(plantId)) {
+            results.push({
+              plantId,
+              questionId,
+              status: 'skipped',
+              message: 'Plant not found in your farm. Please add the plant first.'
+            });
+            continue;
+          }
+
+          // Check if question exists for this plant
+          const questions = await storage.getPlantQuestions(plantId);
+          const questionExists = questions.some(q => q.id === questionId);
+          
+          if (!questionExists) {
+            results.push({
+              plantId,
+              questionId,
+              status: 'error',
+              message: 'Question not found for this plant'
+            });
+            continue;
+          }
+
+          // Validate and create the answer
+          const validatedAnswer = insertFarmerAnswerSchema.parse({
+            farmerId: user.id,
+            plantId,
+            questionId,
+            answer,
+            customAnswer
+          });
+
+          await storage.createFarmerAnswer(validatedAnswer);
+          
+          results.push({
+            plantId,
+            questionId,
+            status: 'success',
+            message: 'Answer submitted successfully'
+          });
+          processedCount++;
+
+        } catch (error) {
+          results.push({
+            plantId: answerData.plantId,
+            questionId: answerData.questionId,
+            status: 'error',
+            message: error instanceof z.ZodError ? 'Validation failed' : 'Failed to save answer'
+          });
+        }
+      }
+
+      res.json({
+        message: `Processed ${processedCount} answers successfully`,
+        processed: processedCount,
+        results: results
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Error logging middleware
   app.use(createErrorLoggingMiddleware());
 
