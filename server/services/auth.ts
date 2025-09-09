@@ -4,7 +4,7 @@ import { storage } from '../storage';
 import { User } from '@shared/schema';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '3d'; // Default to 3 days, configurable via environment
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h'; // Default to 8 hours, configurable via environment
 
 // Configurable rate limiting for login attempts
 const MAX_LOGIN_ATTEMPTS = parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5');

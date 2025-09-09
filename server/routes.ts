@@ -701,7 +701,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: 'Login successful',
         success: true,
         token: loginResult.token,
-        tokenExpiration: '3 days', // Informational for frontend
+        tokenExpiration: '8 hours', // Informational for frontend
         user: {
           userId: loginResult.user!.id,
           id: loginResult.user!.id, // Also include as 'id' for backward compatibility
@@ -944,7 +944,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createSession({
         userId: user!.id,
         token,
-        expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days
+        expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000), // 8 hours
       });
 
       // Return same response structure as successful login
@@ -952,7 +952,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: 'OTP verified successfully. You are now logged in.',
         success: true,
         token,
-        tokenExpiration: '3 days', // Informational for frontend
+        tokenExpiration: '8 hours', // Informational for frontend
         user: {
           userId: user!.id,
           id: user!.id, // Also include as 'id' for backward compatibility
