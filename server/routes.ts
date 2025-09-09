@@ -843,7 +843,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 example: "sms"
    *     responses:
    *       200:
-   *         description: OTP verified successfully, user account is now verified
+   *         description: OTP verified successfully, user is now logged in
    *         content:
    *           application/json:
    *             schema:
@@ -851,7 +851,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *               properties:
    *                 message:
    *                   type: string
-   *                   example: "OTP verified successfully"
+   *                   example: "OTP verified successfully. You are now logged in."
+   *                 success:
+   *                   type: boolean
+   *                   example: true
+   *                 token:
+   *                   type: string
+   *                   description: JWT authentication token
+   *                   example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+   *                 tokenExpiration:
+   *                   type: string
+   *                   description: Token expiration information
+   *                   example: "3 days"
+   *                 user:
+   *                   type: object
+   *                   description: Complete user information
+   *                   properties:
+   *                     userId:
+   *                       type: string
+   *                       description: User's unique identifier
+   *                       example: "123"
+   *                     id:
+   *                       type: string
+   *                       description: User's unique identifier (backward compatibility)
+   *                       example: "123"
+   *                     firstName:
+   *                       type: string
+   *                       example: "John"
+   *                     lastName:
+   *                       type: string
+   *                       example: "Doe"
+   *                     fullName:
+   *                       type: string
+   *                       example: "John Doe"
+   *                     email:
+   *                       type: string
+   *                       example: "john.doe@example.com"
+   *                     phone:
+   *                       type: string
+   *                       example: "+2348123456789"
+   *                     userType:
+   *                       type: string
+   *                       enum: [farmer, buyer]
+   *                       example: "farmer"
+   *                     isVerified:
+   *                       type: boolean
+   *                       example: true
    *       400:
    *         description: Invalid or expired OTP code
    *         content:
@@ -862,6 +907,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
    *                 message:
    *                   type: string
    *                   example: "Invalid or expired OTP code"
+   *       404:
+   *         description: User not found
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "User not found"
    */
   app.post('/api/auth/verify-otp', async (req, res, next) => {
     try {
@@ -872,13 +927,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Invalid or expired OTP code' });
       }
 
-      // If this is account verification, mark user as verified
-      const user = await storage.getUser(userId);
-      if (user && !user.isVerified) {
-        await storage.updateUser(userId, { isVerified: true });
+      // Get user and mark as verified if needed
+      let user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
       }
 
-      res.json({ message: 'OTP verified successfully' });
+      if (!user.isVerified) {
+        await storage.updateUser(userId, { isVerified: true });
+        // Get updated user data
+        user = await storage.getUser(userId);
+      }
+
+      // Generate JWT token and create session for automatic login
+      const token = authService.generateJWT({ userId: user!.id });
+      await storage.createSession({
+        userId: user!.id,
+        token,
+        expiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days
+      });
+
+      // Return same response structure as successful login
+      res.json({ 
+        message: 'OTP verified successfully. You are now logged in.',
+        success: true,
+        token,
+        tokenExpiration: '3 days', // Informational for frontend
+        user: {
+          userId: user!.id,
+          id: user!.id, // Also include as 'id' for backward compatibility
+          firstName: user!.firstName,
+          lastName: user!.lastName,
+          fullName: `${user!.firstName} ${user!.lastName}`,
+          email: user!.email,
+          phone: user!.phone,
+          userType: user!.userType,
+          isVerified: user!.isVerified
+        }
+      });
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: 'Validation failed', errors: error.errors });
