@@ -6,22 +6,23 @@ import { z } from "zod";
 
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userType: text("user_type").notNull(), // 'farmer' or 'buyer'
-  firstName: text("first_name").notNull(),
-  lastName: text("last_name").notNull(),
+  username: text("username"), // Preserve existing column
+  userType: text("user_type"), // 'farmer' or 'buyer' (optional to preserve existing data)
+  firstName: text("first_name"),
+  lastName: text("last_name"),
   phone: text("phone").notNull().unique(),
   email: text("email"), // Optional for farmers
   password: text("password").notNull(),
   
-  // Home address fields
-  homeStreet: text("home_street").notNull(),
-  homeHouseNumber: text("home_house_number").notNull(),
+  // Home address fields (optional to preserve existing data)
+  homeStreet: text("home_street"),
+  homeHouseNumber: text("home_house_number"),
   homeAdditionalDesc: text("home_additional_desc"),
-  homeBusStop: text("home_bus_stop").notNull(),
-  homeLocalGov: text("home_local_gov").notNull(),
+  homeBusStop: text("home_bus_stop"),
+  homeLocalGov: text("home_local_gov"),
   homePostcode: text("home_postcode"),
-  homeState: text("home_state").notNull(),
-  homeCountry: text("home_country").notNull().default('Nigeria'),
+  homeState: text("home_state"),
+  homeCountry: text("home_country").default('Nigeria'),
   
   // Farm address fields (only for farmers)
   farmStreet: text("farm_street"),
