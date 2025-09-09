@@ -13,7 +13,9 @@ import {
   insertFarmerSchema,
   insertBuyerSchema,
   forgotPasswordSchema,
-  resetPasswordSchema 
+  resetPasswordSchema,
+  insertFarmerPlantSchema,
+  insertFarmerAnswerSchema
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -1690,6 +1692,481 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const logs = await storage.getErrorLogs(limit, offset);
       res.json(logs);
     } catch (error) {
+      next(error);
+    }
+  });
+
+  // ================================
+  // PLANT MANAGEMENT ROUTES
+  // ================================
+
+  /**
+   * @swagger
+   * /api/plants:
+   *   get:
+   *     summary: Get All Plants
+   *     description: Retrieve a list of all available plants that can be grown by farmers
+   *     tags: [Plants]
+   *     responses:
+   *       200:
+   *         description: List of plants retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                     example: "plant-123"
+   *                   name:
+   *                     type: string
+   *                     example: "Tomato"
+   *                   description:
+   *                     type: string
+   *                     example: "Nutritious red fruit, great for cooking"
+   *                   category:
+   *                     type: string
+   *                     example: "vegetables"
+   *                   growthDuration:
+   *                     type: string
+   *                     example: "3-4 months"
+   *                   isActive:
+   *                     type: boolean
+   *                     example: true
+   *                   createdAt:
+   *                     type: string
+   *                     format: date-time
+   */
+  app.get('/api/plants', async (req, res, next) => {
+    try {
+      const plants = await storage.getPlants();
+      res.json(plants);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/plants/{plantId}/questions:
+   *   get:
+   *     summary: Get Questions for a Plant
+   *     description: Retrieve all questions and options for a specific plant
+   *     tags: [Plants]
+   *     parameters:
+   *       - in: path
+   *         name: plantId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Plant ID
+   *         example: "plant-123"
+   *     responses:
+   *       200:
+   *         description: Plant questions retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                     example: "question-456"
+   *                   plantId:
+   *                     type: string
+   *                     example: "plant-123"
+   *                   question:
+   *                     type: string
+   *                     example: "How do you process your tomatoes after harvest?"
+   *                   questionType:
+   *                     type: string
+   *                     enum: [multiple_choice, checkbox, text]
+   *                     example: "checkbox"
+   *                   options:
+   *                     type: array
+   *                     items:
+   *                       type: object
+   *                       properties:
+   *                         value:
+   *                           type: string
+   *                           example: "drying"
+   *                         label:
+   *                           type: string
+   *                           example: "Sun drying"
+   *                   isRequired:
+   *                     type: boolean
+   *                     example: true
+   *                   category:
+   *                     type: string
+   *                     example: "processing"
+   *                   orderIndex:
+   *                     type: number
+   *                     example: 1
+   *       404:
+   *         description: Plant not found
+   */
+  app.get('/api/plants/:plantId/questions', async (req, res, next) => {
+    try {
+      const { plantId } = req.params;
+      
+      const plant = await storage.getPlant(plantId);
+      if (!plant) {
+        return res.status(404).json({ message: 'Plant not found' });
+      }
+
+      const questions = await storage.getPlantQuestions(plantId);
+      res.json(questions);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/plants:
+   *   get:
+   *     summary: Get Farmer's Plants
+   *     description: Retrieve all plants selected by the authenticated farmer
+   *     tags: [Farmer Plants]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Farmer's plants retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                     example: "farmer-plant-789"
+   *                   farmerId:
+   *                     type: string
+   *                     example: "farmer-123"
+   *                   plantId:
+   *                     type: string
+   *                     example: "plant-123"
+   *                   landSize:
+   *                     type: string
+   *                     example: "2 acres"
+   *                   notes:
+   *                     type: string
+   *                     example: "Located in the north field"
+   *                   plant:
+   *                     type: object
+   *                     properties:
+   *                       name:
+   *                         type: string
+   *                         example: "Tomato"
+   *                       category:
+   *                         type: string
+   *                         example: "vegetables"
+   *       401:
+   *         description: Unauthorized - token required
+   */
+  app.get('/api/farmer/plants', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Only farmers can access this endpoint' });
+      }
+
+      const farmerPlants = await storage.getFarmerPlants(user.id);
+      res.json(farmerPlants);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/plants:
+   *   post:
+   *     summary: Add Plant to Farmer's Farm
+   *     description: Add a plant to the authenticated farmer's farm with optional details
+   *     tags: [Farmer Plants]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [plantId]
+   *             properties:
+   *               plantId:
+   *                 type: string
+   *                 description: ID of the plant to add
+   *                 example: "plant-123"
+   *               landSize:
+   *                 type: string
+   *                 description: Size of land dedicated to this plant
+   *                 example: "2 acres"
+   *               notes:
+   *                 type: string
+   *                 description: Additional notes about growing this plant
+   *                 example: "Located in the north field, good soil quality"
+   *     responses:
+   *       201:
+   *         description: Plant added successfully
+   *       400:
+   *         description: Validation error or plant already added
+   *       401:
+   *         description: Unauthorized - token required
+   *       403:
+   *         description: Only farmers can add plants
+   *       404:
+   *         description: Plant not found
+   */
+  app.post('/api/farmer/plants', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Only farmers can access this endpoint' });
+      }
+
+      const validatedData = insertFarmerPlantSchema.parse({
+        ...req.body,
+        farmerId: user.id
+      });
+
+      // Check if plant exists
+      const plant = await storage.getPlant(validatedData.plantId);
+      if (!plant) {
+        return res.status(404).json({ message: 'Plant not found' });
+      }
+
+      // Check if farmer already has this plant
+      const existingFarmerPlants = await storage.getFarmerPlants(user.id);
+      const alreadyAdded = existingFarmerPlants.some(fp => fp.plantId === validatedData.plantId);
+      
+      if (alreadyAdded) {
+        return res.status(400).json({ message: 'Plant already added to your farm' });
+      }
+
+      const farmerPlant = await storage.addFarmerPlant(validatedData);
+      res.status(201).json({ 
+        message: 'Plant added to your farm successfully',
+        farmerPlant 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/plants/{plantId}:
+   *   delete:
+   *     summary: Remove Plant from Farmer's Farm
+   *     description: Remove a plant from the authenticated farmer's farm
+   *     tags: [Farmer Plants]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: path
+   *         name: plantId
+   *         required: true
+   *         schema:
+   *           type: string
+   *         description: Plant ID to remove
+   *     responses:
+   *       200:
+   *         description: Plant removed successfully
+   *       401:
+   *         description: Unauthorized - token required
+   *       403:
+   *         description: Only farmers can remove plants
+   *       404:
+   *         description: Plant not found in farmer's collection
+   */
+  app.delete('/api/farmer/plants/:plantId', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      const { plantId } = req.params;
+      
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Only farmers can access this endpoint' });
+      }
+
+      await storage.removeFarmerPlant(user.id, plantId);
+      res.json({ message: 'Plant removed from your farm successfully' });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/answers:
+   *   get:
+   *     summary: Get Farmer's Answers
+   *     description: Retrieve all answers provided by the authenticated farmer for plant questions
+   *     tags: [Farmer Answers]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - in: query
+   *         name: plantId
+   *         schema:
+   *           type: string
+   *         description: Filter answers by plant ID (optional)
+   *     responses:
+   *       200:
+   *         description: Farmer's answers retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: array
+   *               items:
+   *                 type: object
+   *                 properties:
+   *                   id:
+   *                     type: string
+   *                   farmerId:
+   *                     type: string
+   *                   plantId:
+   *                     type: string
+   *                   questionId:
+   *                     type: string
+   *                   answer:
+   *                     oneOf:
+   *                       - type: string
+   *                       - type: array
+   *                         items:
+   *                           type: string
+   *                   customAnswer:
+   *                     type: string
+   *                   question:
+   *                     type: object
+   *                     properties:
+   *                       question:
+   *                         type: string
+   *                       questionType:
+   *                         type: string
+   *       401:
+   *         description: Unauthorized - token required
+   */
+  app.get('/api/farmer/answers', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      const { plantId } = req.query;
+      
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Only farmers can access this endpoint' });
+      }
+
+      const answers = await storage.getFarmerAnswers(user.id, plantId as string);
+      res.json(answers);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/answers:
+   *   post:
+   *     summary: Submit Plant Question Answers
+   *     description: Submit or update answers for plant questions
+   *     tags: [Farmer Answers]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [plantId, questionId, answer]
+   *             properties:
+   *               plantId:
+   *                 type: string
+   *                 description: ID of the plant the question relates to
+   *                 example: "plant-123"
+   *               questionId:
+   *                 type: string
+   *                 description: ID of the question being answered
+   *                 example: "question-456"
+   *               answer:
+   *                 oneOf:
+   *                   - type: string
+   *                     description: Single answer for text or single-choice questions
+   *                     example: "We use traditional sun drying methods"
+   *                   - type: array
+   *                     items:
+   *                       type: string
+   *                     description: Multiple answers for checkbox questions
+   *                     example: ["drying", "canning", "fresh_sale"]
+   *               customAnswer:
+   *                 type: string
+   *                 description: Additional details for "Others" option
+   *                 example: "We also use a special family recipe for preservation"
+   *     responses:
+   *       201:
+   *         description: Answer submitted successfully
+   *       400:
+   *         description: Validation error
+   *       401:
+   *         description: Unauthorized - token required
+   *       403:
+   *         description: Only farmers can submit answers
+   *       404:
+   *         description: Plant or question not found
+   */
+  app.post('/api/farmer/answers', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Only farmers can access this endpoint' });
+      }
+
+      const validatedData = insertFarmerAnswerSchema.parse({
+        ...req.body,
+        farmerId: user.id
+      });
+
+      // Check if plant exists and farmer has selected it
+      const farmerPlants = await storage.getFarmerPlants(user.id);
+      const hasPlant = farmerPlants.some(fp => fp.plantId === validatedData.plantId);
+      
+      if (!hasPlant) {
+        return res.status(404).json({ 
+          message: 'Plant not found in your farm. Please add the plant first.' 
+        });
+      }
+
+      // Check if question exists for this plant
+      const questions = await storage.getPlantQuestions(validatedData.plantId);
+      const questionExists = questions.some(q => q.id === validatedData.questionId);
+      
+      if (!questionExists) {
+        return res.status(404).json({ message: 'Question not found for this plant' });
+      }
+
+      const answer = await storage.createFarmerAnswer(validatedData);
+      res.status(201).json({ 
+        message: 'Answer submitted successfully',
+        answer 
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
       next(error);
     }
   });
