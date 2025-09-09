@@ -5,6 +5,10 @@ import {
   errorLogs, 
   sessions,
   passwordResetTokens,
+  plants,
+  plantQuestions,
+  farmerPlants,
+  farmerAnswers,
   type User, 
   type InsertUser,
   type InsertFarmer,
@@ -18,7 +22,15 @@ import {
   type Session,
   type InsertSession,
   type PasswordResetToken,
-  type InsertPasswordResetToken
+  type InsertPasswordResetToken,
+  type Plant,
+  type InsertPlant,
+  type PlantQuestion,
+  type InsertPlantQuestion,
+  type FarmerPlant,
+  type InsertFarmerPlant,
+  type FarmerAnswer,
+  type InsertFarmerAnswer
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, count, gte, lt } from "drizzle-orm";
@@ -72,6 +84,31 @@ export interface IStorage {
   
   // Health check
   testConnection(): Promise<boolean>;
+  
+  // Plant management methods
+  getPlants(): Promise<Plant[]>;
+  getPlant(id: string): Promise<Plant | undefined>;
+  createPlant(plant: InsertPlant): Promise<Plant>;
+  updatePlant(id: string, updates: Partial<Plant>): Promise<Plant | undefined>;
+  deletePlant(id: string): Promise<void>;
+  
+  // Plant questions methods
+  getPlantQuestions(plantId: string): Promise<PlantQuestion[]>;
+  createPlantQuestion(question: InsertPlantQuestion): Promise<PlantQuestion>;
+  updatePlantQuestion(id: string, updates: Partial<PlantQuestion>): Promise<PlantQuestion | undefined>;
+  deletePlantQuestion(id: string): Promise<void>;
+  
+  // Farmer plants methods
+  getFarmerPlants(farmerId: string): Promise<(FarmerPlant & { plant: Plant })[]>;
+  addFarmerPlant(farmerPlant: InsertFarmerPlant): Promise<FarmerPlant>;
+  removeFarmerPlant(farmerId: string, plantId: string): Promise<void>;
+  updateFarmerPlant(id: string, updates: Partial<FarmerPlant>): Promise<FarmerPlant | undefined>;
+  
+  // Farmer answers methods
+  getFarmerAnswers(farmerId: string, plantId?: string): Promise<(FarmerAnswer & { question: PlantQuestion })[]>;
+  createFarmerAnswer(answer: InsertFarmerAnswer): Promise<FarmerAnswer>;
+  updateFarmerAnswer(id: string, updates: Partial<FarmerAnswer>): Promise<FarmerAnswer | undefined>;
+  getFarmerAnswer(farmerId: string, questionId: string): Promise<FarmerAnswer | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -338,6 +375,164 @@ export class DatabaseStorage implements IStorage {
       console.error('Database connection test failed:', error);
       return false;
     }
+  }
+
+  // Plant management methods
+  async getPlants(): Promise<Plant[]> {
+    return await db.select().from(plants).where(eq(plants.isActive, true)).orderBy(plants.name);
+  }
+
+  async getPlant(id: string): Promise<Plant | undefined> {
+    const [plant] = await db.select().from(plants).where(eq(plants.id, id));
+    return plant || undefined;
+  }
+
+  async createPlant(plant: InsertPlant): Promise<Plant> {
+    const [newPlant] = await db.insert(plants).values(plant).returning();
+    return newPlant;
+  }
+
+  async updatePlant(id: string, updates: Partial<Plant>): Promise<Plant | undefined> {
+    const [plant] = await db
+      .update(plants)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(plants.id, id))
+      .returning();
+    return plant || undefined;
+  }
+
+  async deletePlant(id: string): Promise<void> {
+    await db.update(plants).set({ isActive: false }).where(eq(plants.id, id));
+  }
+
+  // Plant questions methods
+  async getPlantQuestions(plantId: string): Promise<PlantQuestion[]> {
+    return await db
+      .select()
+      .from(plantQuestions)
+      .where(eq(plantQuestions.plantId, plantId))
+      .orderBy(plantQuestions.orderIndex, plantQuestions.createdAt);
+  }
+
+  async createPlantQuestion(question: InsertPlantQuestion): Promise<PlantQuestion> {
+    const [newQuestion] = await db.insert(plantQuestions).values(question).returning();
+    return newQuestion;
+  }
+
+  async updatePlantQuestion(id: string, updates: Partial<PlantQuestion>): Promise<PlantQuestion | undefined> {
+    const [question] = await db
+      .update(plantQuestions)
+      .set(updates)
+      .where(eq(plantQuestions.id, id))
+      .returning();
+    return question || undefined;
+  }
+
+  async deletePlantQuestion(id: string): Promise<void> {
+    await db.delete(plantQuestions).where(eq(plantQuestions.id, id));
+  }
+
+  // Farmer plants methods
+  async getFarmerPlants(farmerId: string): Promise<(FarmerPlant & { plant: Plant })[]> {
+    return await db
+      .select({
+        id: farmerPlants.id,
+        farmerId: farmerPlants.farmerId,
+        plantId: farmerPlants.plantId,
+        landSize: farmerPlants.landSize,
+        notes: farmerPlants.notes,
+        createdAt: farmerPlants.createdAt,
+        plant: plants,
+      })
+      .from(farmerPlants)
+      .innerJoin(plants, eq(farmerPlants.plantId, plants.id))
+      .where(and(eq(farmerPlants.farmerId, farmerId), eq(plants.isActive, true)))
+      .orderBy(farmerPlants.createdAt);
+  }
+
+  async addFarmerPlant(farmerPlant: InsertFarmerPlant): Promise<FarmerPlant> {
+    const [newFarmerPlant] = await db.insert(farmerPlants).values(farmerPlant).returning();
+    return newFarmerPlant;
+  }
+
+  async removeFarmerPlant(farmerId: string, plantId: string): Promise<void> {
+    await db
+      .delete(farmerPlants)
+      .where(and(eq(farmerPlants.farmerId, farmerId), eq(farmerPlants.plantId, plantId)));
+  }
+
+  async updateFarmerPlant(id: string, updates: Partial<FarmerPlant>): Promise<FarmerPlant | undefined> {
+    const [farmerPlant] = await db
+      .update(farmerPlants)
+      .set(updates)
+      .where(eq(farmerPlants.id, id))
+      .returning();
+    return farmerPlant || undefined;
+  }
+
+  // Farmer answers methods
+  async getFarmerAnswers(farmerId: string, plantId?: string): Promise<(FarmerAnswer & { question: PlantQuestion })[]> {
+    const conditions = [eq(farmerAnswers.farmerId, farmerId)];
+    if (plantId) {
+      conditions.push(eq(farmerAnswers.plantId, plantId));
+    }
+
+    return await db
+      .select({
+        id: farmerAnswers.id,
+        farmerId: farmerAnswers.farmerId,
+        plantId: farmerAnswers.plantId,
+        questionId: farmerAnswers.questionId,
+        answer: farmerAnswers.answer,
+        customAnswer: farmerAnswers.customAnswer,
+        createdAt: farmerAnswers.createdAt,
+        updatedAt: farmerAnswers.updatedAt,
+        question: plantQuestions,
+      })
+      .from(farmerAnswers)
+      .innerJoin(plantQuestions, eq(farmerAnswers.questionId, plantQuestions.id))
+      .where(and(...conditions))
+      .orderBy(plantQuestions.orderIndex, plantQuestions.createdAt);
+  }
+
+  async createFarmerAnswer(answer: InsertFarmerAnswer): Promise<FarmerAnswer> {
+    // Check if answer already exists for this farmer and question
+    const existingAnswer = await this.getFarmerAnswer(answer.farmerId, answer.questionId);
+    
+    if (existingAnswer) {
+      // Update existing answer
+      const [updatedAnswer] = await db
+        .update(farmerAnswers)
+        .set({ 
+          answer: answer.answer, 
+          customAnswer: answer.customAnswer,
+          updatedAt: new Date()
+        })
+        .where(eq(farmerAnswers.id, existingAnswer.id))
+        .returning();
+      return updatedAnswer;
+    } else {
+      // Create new answer
+      const [newAnswer] = await db.insert(farmerAnswers).values(answer).returning();
+      return newAnswer;
+    }
+  }
+
+  async updateFarmerAnswer(id: string, updates: Partial<FarmerAnswer>): Promise<FarmerAnswer | undefined> {
+    const [answer] = await db
+      .update(farmerAnswers)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(farmerAnswers.id, id))
+      .returning();
+    return answer || undefined;
+  }
+
+  async getFarmerAnswer(farmerId: string, questionId: string): Promise<FarmerAnswer | undefined> {
+    const [answer] = await db
+      .select()
+      .from(farmerAnswers)
+      .where(and(eq(farmerAnswers.farmerId, farmerId), eq(farmerAnswers.questionId, questionId)));
+    return answer || undefined;
   }
 }
 
