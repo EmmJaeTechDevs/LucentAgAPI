@@ -93,6 +93,50 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   createdAt: timestamp("created_at").default(sql`now()`),
 });
 
+// Plant management tables
+export const plants = pgTable("plants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  category: text("category"), // e.g., 'vegetables', 'fruits', 'grains', 'herbs'
+  growthDuration: text("growth_duration"), // e.g., '3-4 months'
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const plantQuestions = pgTable("plant_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  plantId: varchar("plant_id").notNull().references(() => plants.id, { onDelete: "cascade" }),
+  question: text("question").notNull(),
+  questionType: text("question_type").notNull(), // 'multiple_choice', 'checkbox', 'text'
+  options: jsonb("options"), // Array of option objects: [{value: 'option1', label: 'Option 1'}, {value: 'others', label: 'Others (please specify)'}]
+  isRequired: boolean("is_required").default(true),
+  category: text("category"), // e.g., 'processing', 'waste_management', 'cultivation'
+  orderIndex: integer("order_index").default(0),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+export const farmerPlants = pgTable("farmer_plants", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  farmerId: varchar("farmer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  plantId: varchar("plant_id").notNull().references(() => plants.id, { onDelete: "cascade" }),
+  landSize: text("land_size"), // Optional: size of land dedicated to this plant
+  notes: text("notes"), // Optional: farmer's notes about growing this plant
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+export const farmerAnswers = pgTable("farmer_answers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  farmerId: varchar("farmer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  plantId: varchar("plant_id").notNull().references(() => plants.id, { onDelete: "cascade" }),
+  questionId: varchar("question_id").notNull().references(() => plantQuestions.id, { onDelete: "cascade" }),
+  answer: jsonb("answer").notNull(), // Can store string, array of strings for checkboxes, or object for complex answers
+  customAnswer: text("custom_answer"), // For 'others' option or additional details
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   otpCodes: many(otpCodes),
@@ -100,6 +144,8 @@ export const usersRelations = relations(users, ({ many }) => ({
   errorLogs: many(errorLogs),
   sessions: many(sessions),
   passwordResetTokens: many(passwordResetTokens),
+  farmerPlants: many(farmerPlants),
+  farmerAnswers: many(farmerAnswers),
 }));
 
 export const otpCodesRelations = relations(otpCodes, ({ one }) => ({
@@ -134,6 +180,46 @@ export const passwordResetTokensRelations = relations(passwordResetTokens, ({ on
   user: one(users, {
     fields: [passwordResetTokens.userId],
     references: [users.id],
+  }),
+}));
+
+export const plantsRelations = relations(plants, ({ many }) => ({
+  questions: many(plantQuestions),
+  farmerPlants: many(farmerPlants),
+  farmerAnswers: many(farmerAnswers),
+}));
+
+export const plantQuestionsRelations = relations(plantQuestions, ({ one, many }) => ({
+  plant: one(plants, {
+    fields: [plantQuestions.plantId],
+    references: [plants.id],
+  }),
+  farmerAnswers: many(farmerAnswers),
+}));
+
+export const farmerPlantsRelations = relations(farmerPlants, ({ one }) => ({
+  farmer: one(users, {
+    fields: [farmerPlants.farmerId],
+    references: [users.id],
+  }),
+  plant: one(plants, {
+    fields: [farmerPlants.plantId],
+    references: [plants.id],
+  }),
+}));
+
+export const farmerAnswersRelations = relations(farmerAnswers, ({ one }) => ({
+  farmer: one(users, {
+    fields: [farmerAnswers.farmerId],
+    references: [users.id],
+  }),
+  plant: one(plants, {
+    fields: [farmerAnswers.plantId],
+    references: [plants.id],
+  }),
+  question: one(plantQuestions, {
+    fields: [farmerAnswers.questionId],
+    references: [plantQuestions.id],
   }),
 }));
 
@@ -284,6 +370,76 @@ export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTo
   expiresAt: true,
 });
 
+// Plant management insert schemas
+export const insertPlantSchema = createInsertSchema(plants).pick({
+  name: true,
+  description: true,
+  category: true,
+  growthDuration: true,
+  isActive: true,
+}).extend({
+  name: z.string().min(1, "Plant name is required"),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  growthDuration: z.string().optional(),
+  isActive: z.boolean().default(true),
+});
+
+export const insertPlantQuestionSchema = createInsertSchema(plantQuestions).pick({
+  plantId: true,
+  question: true,
+  questionType: true,
+  options: true,
+  isRequired: true,
+  category: true,
+  orderIndex: true,
+}).extend({
+  plantId: z.string().min(1, "Plant ID is required"),
+  question: z.string().min(1, "Question is required"),
+  questionType: z.enum(["multiple_choice", "checkbox", "text"], {
+    required_error: "Question type is required"
+  }),
+  options: z.array(z.object({
+    value: z.string(),
+    label: z.string(),
+  })).optional(),
+  isRequired: z.boolean().default(true),
+  category: z.string().optional(),
+  orderIndex: z.number().default(0),
+});
+
+export const insertFarmerPlantSchema = createInsertSchema(farmerPlants).pick({
+  farmerId: true,
+  plantId: true,
+  landSize: true,
+  notes: true,
+}).extend({
+  farmerId: z.string().min(1, "Farmer ID is required"),
+  plantId: z.string().min(1, "Plant ID is required"),
+  landSize: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const insertFarmerAnswerSchema = createInsertSchema(farmerAnswers).pick({
+  farmerId: true,
+  plantId: true,
+  questionId: true,
+  answer: true,
+  customAnswer: true,
+}).extend({
+  farmerId: z.string().min(1, "Farmer ID is required"),
+  plantId: z.string().min(1, "Plant ID is required"),
+  questionId: z.string().min(1, "Question ID is required"),
+  answer: z.union([
+    z.string(),
+    z.array(z.string()),
+    z.record(z.any()),
+  ], {
+    required_error: "Answer is required"
+  }),
+  customAnswer: z.string().optional(),
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertFarmer = z.infer<typeof insertFarmerSchema>;
@@ -299,6 +455,16 @@ export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type Session = typeof sessions.$inferSelect;
 export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// Plant management types
+export type InsertPlant = z.infer<typeof insertPlantSchema>;
+export type Plant = typeof plants.$inferSelect;
+export type InsertPlantQuestion = z.infer<typeof insertPlantQuestionSchema>;
+export type PlantQuestion = typeof plantQuestions.$inferSelect;
+export type InsertFarmerPlant = z.infer<typeof insertFarmerPlantSchema>;
+export type FarmerPlant = typeof farmerPlants.$inferSelect;
+export type InsertFarmerAnswer = z.infer<typeof insertFarmerAnswerSchema>;
+export type FarmerAnswer = typeof farmerAnswers.$inferSelect;
 
 // Login schemas
 export const loginSchema = z.object({
