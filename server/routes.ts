@@ -2259,17 +2259,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         const questions = await storage.getPlantQuestions(plantId);
-        // Add custom answer support to each question
-        const questionsWithCustom = questions.map(question => ({
-          ...question,
-          allowCustomAnswer: true, // All questions allow custom answers
-          customAnswerLabel: "Additional details or custom option"
-        }));
-        
         questionsData.push({
           plantId: plant.id,
           plantName: plant.name,
-          questions: questionsWithCustom
+          questions: questions
         });
       }
 
