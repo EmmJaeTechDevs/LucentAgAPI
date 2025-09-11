@@ -138,8 +138,19 @@ export const farmerAnswers = pgTable("farmer_answers", {
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
+export const userNotificationPreferences = pgTable("user_notification_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  smsEnabled: boolean("sms_enabled").default(true),
+  emailEnabled: boolean("email_enabled").default(true),
+  whatsappEnabled: boolean("whatsapp_enabled").default(false),
+  inAppEnabled: boolean("in_app_enabled").default(true),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   otpCodes: many(otpCodes),
   httpLogs: many(httpLogs),
   errorLogs: many(errorLogs),
@@ -147,6 +158,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   passwordResetTokens: many(passwordResetTokens),
   farmerPlants: many(farmerPlants),
   farmerAnswers: many(farmerAnswers),
+  notificationPreferences: one(userNotificationPreferences),
 }));
 
 export const otpCodesRelations = relations(otpCodes, ({ one }) => ({
@@ -221,6 +233,13 @@ export const farmerAnswersRelations = relations(farmerAnswers, ({ one }) => ({
   question: one(plantQuestions, {
     fields: [farmerAnswers.questionId],
     references: [plantQuestions.id],
+  }),
+}));
+
+export const userNotificationPreferencesRelations = relations(userNotificationPreferences, ({ one }) => ({
+  user: one(users, {
+    fields: [userNotificationPreferences.userId],
+    references: [users.id],
   }),
 }));
 
@@ -466,6 +485,22 @@ export type InsertFarmerPlant = z.infer<typeof insertFarmerPlantSchema>;
 export type FarmerPlant = typeof farmerPlants.$inferSelect;
 export type InsertFarmerAnswer = z.infer<typeof insertFarmerAnswerSchema>;
 export type FarmerAnswer = typeof farmerAnswers.$inferSelect;
+
+// Notification preferences types
+export type UserNotificationPreferences = typeof userNotificationPreferences.$inferSelect;
+export type InsertUserNotificationPreferences = typeof userNotificationPreferences.$inferInsert;
+
+export const insertUserNotificationPreferencesSchema = createInsertSchema(userNotificationPreferences).omit({
+  id: true,
+  userId: true, // Remove userId from client schema - security fix
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  smsEnabled: z.boolean().optional(),
+  emailEnabled: z.boolean().optional(),
+  whatsappEnabled: z.boolean().optional(),
+  inAppEnabled: z.boolean().optional(),
+});
 
 // Login schemas
 export const loginSchema = z.object({

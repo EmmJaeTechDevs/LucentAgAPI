@@ -15,7 +15,8 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   insertFarmerPlantSchema,
-  insertFarmerAnswerSchema
+  insertFarmerAnswerSchema,
+  insertUserNotificationPreferencesSchema
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -2457,6 +2458,186 @@ export async function registerRoutes(app: Express): Promise<Server> {
         results: results
       });
     } catch (error) {
+      next(error);
+    }
+  });
+
+  // ================================
+  // USER NOTIFICATION PREFERENCES ROUTES
+  // ================================
+
+  /**
+   * @swagger
+   * /api/users/notification-preferences:
+   *   get:
+   *     summary: Get User Notification Preferences
+   *     description: Retrieve the notification preferences for the authenticated user
+   *     tags: [User Preferences]
+   *     security:
+   *       - bearerAuth: []
+   *     responses:
+   *       200:
+   *         description: Notification preferences retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 id:
+   *                   type: string
+   *                   example: "pref-123"
+   *                 userId:
+   *                   type: string
+   *                   example: "user-456"
+   *                 smsEnabled:
+   *                   type: boolean
+   *                   example: true
+   *                 emailEnabled:
+   *                   type: boolean
+   *                   example: true
+   *                 whatsappEnabled:
+   *                   type: boolean
+   *                   example: false
+   *                 inAppEnabled:
+   *                   type: boolean
+   *                   example: true
+   *                 createdAt:
+   *                   type: string
+   *                   format: date-time
+   *                 updatedAt:
+   *                   type: string
+   *                   format: date-time
+   *       401:
+   *         description: Unauthorized - token required
+   *       404:
+   *         description: No preferences found (user can set them using POST)
+   */
+  app.get('/api/users/notification-preferences', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      
+      const preferences = await storage.getUserNotificationPreferences(user.id);
+      
+      if (!preferences) {
+        return res.status(404).json({ 
+          message: 'No notification preferences found. Please set your preferences.',
+          defaultPreferences: {
+            smsEnabled: true,
+            emailEnabled: true,
+            whatsappEnabled: false,
+            inAppEnabled: true
+          }
+        });
+      }
+      
+      res.json(preferences);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/users/notification-preferences:
+   *   post:
+   *     summary: Set or Update User Notification Preferences
+   *     description: Create new notification preferences or update existing ones for the authenticated user
+   *     tags: [User Preferences]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               smsEnabled:
+   *                 type: boolean
+   *                 description: Enable SMS notifications
+   *                 example: true
+   *               emailEnabled:
+   *                 type: boolean
+   *                 description: Enable email notifications
+   *                 example: true
+   *               whatsappEnabled:
+   *                 type: boolean
+   *                 description: Enable WhatsApp notifications
+   *                 example: false
+   *               inAppEnabled:
+   *                 type: boolean
+   *                 description: Enable in-app notifications
+   *                 example: true
+   *           example:
+   *             smsEnabled: true
+   *             emailEnabled: true
+   *             whatsappEnabled: false
+   *             inAppEnabled: true
+   *     responses:
+   *       200:
+   *         description: Preferences updated successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Notification preferences updated successfully"
+   *                 preferences:
+   *                   type: object
+   *                   properties:
+   *                     id:
+   *                       type: string
+   *                     userId:
+   *                       type: string
+   *                     smsEnabled:
+   *                       type: boolean
+   *                     emailEnabled:
+   *                       type: boolean
+   *                     whatsappEnabled:
+   *                       type: boolean
+   *                     inAppEnabled:
+   *                       type: boolean
+   *                     createdAt:
+   *                       type: string
+   *                       format: date-time
+   *                     updatedAt:
+   *                       type: string
+   *                       format: date-time
+   *       201:
+   *         description: Preferences created successfully
+   *       400:
+   *         description: Validation error
+   *       401:
+   *         description: Unauthorized - token required
+   */
+  app.post('/api/users/notification-preferences', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      
+      // Security fix: Only accept preferences from body, never userId
+      const bodyData = insertUserNotificationPreferencesSchema.parse(req.body);
+      const validatedData = {
+        ...bodyData,
+        userId: user.id // Inject userId from authenticated session only
+      };
+
+      const preferences = await storage.createOrUpdateUserNotificationPreferences(validatedData);
+      
+      // Check if this was a creation or update
+      const isNewRecord = !await storage.getUserNotificationPreferences(user.id);
+      
+      res.status(isNewRecord ? 201 : 200).json({
+        message: isNewRecord 
+          ? 'Notification preferences created successfully'
+          : 'Notification preferences updated successfully',
+        preferences
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
       next(error);
     }
   });

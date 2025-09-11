@@ -9,6 +9,7 @@ import {
   plantQuestions,
   farmerPlants,
   farmerAnswers,
+  userNotificationPreferences,
   type User, 
   type InsertUser,
   type InsertFarmer,
@@ -30,7 +31,9 @@ import {
   type FarmerPlant,
   type InsertFarmerPlant,
   type FarmerAnswer,
-  type InsertFarmerAnswer
+  type InsertFarmerAnswer,
+  type UserNotificationPreferences,
+  type InsertUserNotificationPreferences
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, count, gte, lt } from "drizzle-orm";
@@ -109,6 +112,10 @@ export interface IStorage {
   createFarmerAnswer(answer: InsertFarmerAnswer): Promise<FarmerAnswer>;
   updateFarmerAnswer(id: string, updates: Partial<FarmerAnswer>): Promise<FarmerAnswer | undefined>;
   getFarmerAnswer(farmerId: string, questionId: string): Promise<FarmerAnswer | undefined>;
+  
+  // User notification preferences methods
+  getUserNotificationPreferences(userId: string): Promise<UserNotificationPreferences | undefined>;
+  createOrUpdateUserNotificationPreferences(preferences: InsertUserNotificationPreferences): Promise<UserNotificationPreferences>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -533,6 +540,51 @@ export class DatabaseStorage implements IStorage {
       .from(farmerAnswers)
       .where(and(eq(farmerAnswers.farmerId, farmerId), eq(farmerAnswers.questionId, questionId)));
     return answer || undefined;
+  }
+
+  // User notification preferences methods
+  async getUserNotificationPreferences(userId: string): Promise<UserNotificationPreferences | undefined> {
+    const [preferences] = await db
+      .select()
+      .from(userNotificationPreferences)
+      .where(eq(userNotificationPreferences.userId, userId));
+    return preferences || undefined;
+  }
+
+  async createOrUpdateUserNotificationPreferences(preferences: InsertUserNotificationPreferences): Promise<UserNotificationPreferences> {
+    // Check if preferences already exist for this user
+    const existingPreferences = await this.getUserNotificationPreferences(preferences.userId);
+    
+    if (existingPreferences) {
+      // Update existing preferences - only update provided fields
+      const updateSet: Partial<UserNotificationPreferences> = { updatedAt: new Date() };
+      if (preferences.smsEnabled !== undefined) updateSet.smsEnabled = preferences.smsEnabled;
+      if (preferences.emailEnabled !== undefined) updateSet.emailEnabled = preferences.emailEnabled;
+      if (preferences.whatsappEnabled !== undefined) updateSet.whatsappEnabled = preferences.whatsappEnabled;
+      if (preferences.inAppEnabled !== undefined) updateSet.inAppEnabled = preferences.inAppEnabled;
+      
+      const [updatedPreferences] = await db
+        .update(userNotificationPreferences)
+        .set(updateSet)
+        .where(eq(userNotificationPreferences.userId, preferences.userId))
+        .returning();
+      return updatedPreferences;
+    } else {
+      // Create new preferences with defaults for undefined values
+      const createData: InsertUserNotificationPreferences = {
+        userId: preferences.userId,
+        smsEnabled: preferences.smsEnabled ?? true,
+        emailEnabled: preferences.emailEnabled ?? true,
+        whatsappEnabled: preferences.whatsappEnabled ?? false,
+        inAppEnabled: preferences.inAppEnabled ?? true,
+      };
+      
+      const [newPreferences] = await db
+        .insert(userNotificationPreferences)
+        .values(createData)
+        .returning();
+      return newPreferences;
+    }
   }
 }
 
