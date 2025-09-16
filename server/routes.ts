@@ -3773,6 +3773,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  /**
+   * @swagger
+   * /api/delivery/units:
+   *   get:
+   *     summary: Get Available Delivery Units
+   *     description: Retrieve a list of all available delivery units (bags, baskets, kg, etc.) with their weight conversions
+   *     tags: [Delivery]
+   *     parameters:
+   *       - name: activeOnly
+   *         in: query
+   *         description: Only return active units
+   *         schema:
+   *           type: boolean
+   *           default: true
+   *     responses:
+   *       200:
+   *         description: Available delivery units retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 units:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       id:
+   *                         type: string
+   *                       name:
+   *                         type: string
+   *                         example: "bags"
+   *                       displayName:
+   *                         type: string
+   *                         example: "Bags"
+   *                       weightInKg:
+   *                         type: integer
+   *                         description: Weight conversion factor in grams
+   *                         example: 50000
+   *                       description:
+   *                         type: string
+   *                         example: "Standard 50kg grain bags"
+   *                       isActive:
+   *                         type: boolean
+   *                         example: true
+   *                 total:
+   *                   type: integer
+   *                   example: 3
+   *       500:
+   *         description: Internal server error
+   */
+  app.get('/api/delivery/units', async (req, res, next) => {
+    try {
+      const activeOnly = req.query.activeOnly !== 'false';
+      
+      const units = activeOnly 
+        ? await storage.getActiveDeliveryUnits()
+        : await storage.getAllDeliveryUnits();
+      
+      res.json({
+        units,
+        total: units.length
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Error logging middleware
   app.use(createErrorLoggingMiddleware());
 

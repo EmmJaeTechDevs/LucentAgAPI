@@ -217,6 +217,18 @@ export const deliveryLocations = pgTable("delivery_locations", {
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
+// Units table for flexible delivery unit management
+export const deliveryUnits = pgTable("delivery_units", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(), // e.g., 'bags', 'baskets', 'kg'
+  displayName: text("display_name").notNull(), // e.g., 'Bags', 'Baskets', 'Kilograms'
+  weightInKg: integer("weight_in_kg").notNull(), // Weight conversion to kg (in grams for precision)
+  description: text("description"), // Optional description
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   otpCodes: many(otpCodes),
@@ -627,6 +639,8 @@ export type CropNotification = typeof cropNotifications.$inferSelect;
 export type InsertCropNotification = z.infer<typeof insertCropNotificationSchema>;
 export type DeliveryLocation = typeof deliveryLocations.$inferSelect;
 export type InsertDeliveryLocation = z.infer<typeof insertDeliveryLocationSchema>;
+export type DeliveryUnit = typeof deliveryUnits.$inferSelect;
+export type InsertDeliveryUnit = z.infer<typeof insertDeliveryUnitSchema>;
 
 // Search and filter types
 export type CropSearchParams = z.infer<typeof cropSearchSchema>;
@@ -655,10 +669,7 @@ export const insertFarmerCropSchema = createInsertSchema(farmerCrops).omit({
 }).extend({
   plantId: z.string().min(1, "Plant selection is required"),
   totalQuantity: z.number().int().min(1, "Quantity must be at least 1"),
-  unit: z.enum(["bags", "baskets", "kg"], {
-    required_error: "Unit is required",
-    invalid_type_error: "Unit must be bags, baskets, or kg"
-  }),
+  unit: z.string().min(1, "Unit is required"),
   pricePerUnit: z.number().int().min(1, "Price must be greater than 0"),
   harvestDate: z.date({
     required_error: "Harvest date is required",
@@ -722,6 +733,18 @@ export const insertDeliveryLocationSchema = createInsertSchema(deliveryLocations
   phoneNumber: z.string().optional(),
 });
 
+export const insertDeliveryUnitSchema = createInsertSchema(deliveryUnits).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Unit name is required").regex(/^[a-z_]+$/, "Unit name must be lowercase with underscores only"),
+  displayName: z.string().min(1, "Display name is required"),
+  weightInKg: z.number().int().min(1, "Weight must be at least 1 gram"),
+  description: z.string().optional(),
+  isActive: z.boolean().optional().default(true),
+});
+
 // Search and filter schemas
 export const cropSearchSchema = z.object({
   query: z.string().optional(),
@@ -730,7 +753,7 @@ export const cropSearchSchema = z.object({
   lga: z.string().optional(),
   minPrice: z.number().int().min(0).optional(),
   maxPrice: z.number().int().min(0).optional(),
-  unit: z.enum(["bags", "baskets", "kg"]).optional(),
+  unit: z.string().optional(),
   page: z.number().int().min(1).default(1),
   limit: z.number().int().min(1).max(100).default(20),
 });
@@ -743,7 +766,7 @@ export const deliveryFeeRequestSchema = z.object({
   toLga: z.string().min(1, "Destination LGA is required"),
   toAddress: z.string().min(1, "Destination address is required"),
   weight: z.number().min(0.1, "Weight must be greater than 0"),
-  unit: z.enum(["bags", "baskets", "kg"]),
+  unit: z.string().min(1, "Unit is required"),
   quantity: z.number().int().min(1, "Quantity must be at least 1"),
 });
 

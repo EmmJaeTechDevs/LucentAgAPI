@@ -1,4 +1,17 @@
 import type { DeliveryFeeRequest } from "@shared/schema";
+import { storage } from "../storage";
+
+// Centralized helper for calculating weight from any delivery request
+async function calculateWeightFromRequest(request: DeliveryFeeRequest): Promise<number> {
+  const unit = await storage.getDeliveryUnitByName(request.unit);
+  if (!unit) {
+    throw new Error(`Unknown unit: ${request.unit}`);
+  }
+
+  // Convert from grams to kg and calculate total weight
+  const unitWeightInKg = unit.weightInKg / 1000;
+  return request.weight * unitWeightInKg * request.quantity;
+}
 
 interface DeliveryFeeResponse {
   deliveryFee: number; // Fee in cents
@@ -28,7 +41,7 @@ class MockNigerianLogistics implements DeliveryProvider {
 
     // Base rate: ₦100 per km, plus ₦50 per kg/unit
     const baseRate = distance * 100; // ₦1 per km
-    const weightRate = this.calculateWeight(request) * 50; // ₦0.5 per kg
+    const weightRate = (await calculateWeightFromRequest(request)) * 50; // ₦0.5 per kg
     const deliveryFee = Math.round((baseRate + weightRate) * 100); // Convert to cents
 
     // Estimate duration based on distance
@@ -99,16 +112,6 @@ class MockNigerianLogistics implements DeliveryProvider {
     return Math.round(distance * variation);
   }
 
-  private calculateWeight(request: DeliveryFeeRequest): number {
-    // Convert different units to approximate weight in kg
-    const unitWeights = {
-      'kg': request.weight,
-      'bags': request.weight * 50, // Assume 50kg per bag for grains
-      'baskets': request.weight * 25 // Assume 25kg per basket
-    };
-
-    return unitWeights[request.unit] * request.quantity;
-  }
 }
 
 // Google Maps Distance Matrix integration (for production)
@@ -132,7 +135,7 @@ class GoogleMapsDeliveryService implements DeliveryProvider {
       
       // Mock response for now
       const mockDistance = Math.floor(Math.random() * 500 + 50);
-      const weight = this.calculateWeight(request);
+      const weight = await calculateWeightFromRequest(request);
       
       // Nigerian logistics pricing: Base rate + distance rate + weight rate
       const baseRate = 2000; // ₙ20 base fee
@@ -152,15 +155,6 @@ class GoogleMapsDeliveryService implements DeliveryProvider {
       const mockProvider = new MockNigerianLogistics();
       return mockProvider.calculateFee(request);
     }
-  }
-
-  private calculateWeight(request: DeliveryFeeRequest): number {
-    const unitWeights = {
-      'kg': request.weight,
-      'bags': request.weight * 50,
-      'baskets': request.weight * 25
-    };
-    return unitWeights[request.unit] * request.quantity;
   }
 
   private calculateDuration(distance: number): string {
@@ -186,7 +180,7 @@ class GIGLogistics implements DeliveryProvider {
     // For now, use enhanced mock calculation
     
     const distance = this.estimateDistanceAdvanced(request);
-    const weight = this.calculateWeight(request);
+    const weight = await calculateWeightFromRequest(request);
     
     // GIG Logistics pricing structure
     const baseFee = 1500; // ₦15 base
@@ -235,15 +229,6 @@ class GIGLogistics implements DeliveryProvider {
     const distance = R * c;
 
     return Math.max(distance, 10); // Minimum 10km
-  }
-
-  private calculateWeight(request: DeliveryFeeRequest): number {
-    const unitWeights = {
-      'kg': request.weight,
-      'bags': request.weight * 50,
-      'baskets': request.weight * 25
-    };
-    return unitWeights[request.unit] * request.quantity;
   }
 
   private calculateDuration(distance: number): string {

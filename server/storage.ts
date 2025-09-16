@@ -14,6 +14,7 @@ import {
   cropOrders,
   cropNotifications,
   deliveryLocations,
+  deliveryUnits,
   type User, 
   type InsertUser,
   type InsertFarmer,
@@ -46,6 +47,8 @@ import {
   type InsertCropNotification,
   type DeliveryLocation,
   type InsertDeliveryLocation,
+  type DeliveryUnit,
+  type InsertDeliveryUnit,
   type CropSearchParams
 } from "@shared/schema";
 import { db } from "./db";
@@ -161,6 +164,14 @@ export interface IStorage {
   updateDeliveryLocation(locationId: string, userId: string, updates: Partial<DeliveryLocation>): Promise<DeliveryLocation | undefined>;
   deleteDeliveryLocation(locationId: string, userId: string): Promise<boolean>;
   setDefaultDeliveryLocation(locationId: string, userId: string): Promise<boolean>;
+
+  // E-commerce: Delivery unit methods
+  getAllDeliveryUnits(): Promise<DeliveryUnit[]>;
+  getActiveDeliveryUnits(): Promise<DeliveryUnit[]>;
+  createDeliveryUnit(unit: InsertDeliveryUnit): Promise<DeliveryUnit>;
+  updateDeliveryUnit(unitId: string, updates: Partial<DeliveryUnit>): Promise<DeliveryUnit | undefined>;
+  deleteDeliveryUnit(unitId: string): Promise<boolean>;
+  getDeliveryUnitByName(name: string): Promise<DeliveryUnit | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1157,6 +1168,55 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     return result.length > 0;
+  }
+
+  // E-commerce: Delivery unit methods
+  async getAllDeliveryUnits(): Promise<DeliveryUnit[]> {
+    return await db
+      .select()
+      .from(deliveryUnits)
+      .orderBy(asc(deliveryUnits.name));
+  }
+
+  async getActiveDeliveryUnits(): Promise<DeliveryUnit[]> {
+    return await db
+      .select()
+      .from(deliveryUnits)
+      .where(eq(deliveryUnits.isActive, true))
+      .orderBy(asc(deliveryUnits.name));
+  }
+
+  async createDeliveryUnit(unit: InsertDeliveryUnit): Promise<DeliveryUnit> {
+    const [deliveryUnit] = await db
+      .insert(deliveryUnits)
+      .values(unit)
+      .returning();
+    return deliveryUnit;
+  }
+
+  async updateDeliveryUnit(unitId: string, updates: Partial<DeliveryUnit>): Promise<DeliveryUnit | undefined> {
+    const [unit] = await db
+      .update(deliveryUnits)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(deliveryUnits.id, unitId))
+      .returning();
+    return unit || undefined;
+  }
+
+  async deleteDeliveryUnit(unitId: string): Promise<boolean> {
+    const result = await db
+      .delete(deliveryUnits)
+      .where(eq(deliveryUnits.id, unitId))
+      .returning();
+    return result.length > 0;
+  }
+
+  async getDeliveryUnitByName(name: string): Promise<DeliveryUnit | undefined> {
+    const [unit] = await db
+      .select()
+      .from(deliveryUnits)
+      .where(eq(deliveryUnits.name, name));
+    return unit || undefined;
   }
 }
 
