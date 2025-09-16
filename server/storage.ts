@@ -10,6 +10,10 @@ import {
   farmerPlants,
   farmerAnswers,
   userNotificationPreferences,
+  farmerCrops,
+  cropOrders,
+  cropNotifications,
+  deliveryLocations,
   type User, 
   type InsertUser,
   type InsertFarmer,
@@ -33,10 +37,19 @@ import {
   type FarmerAnswer,
   type InsertFarmerAnswer,
   type UserNotificationPreferences,
-  type InsertUserNotificationPreferences
+  type InsertUserNotificationPreferences,
+  type FarmerCrop,
+  type InsertFarmerCrop,
+  type CropOrder,
+  type InsertCropOrder,
+  type CropNotification,
+  type InsertCropNotification,
+  type DeliveryLocation,
+  type InsertDeliveryLocation,
+  type CropSearchParams
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, count, gte, lt } from "drizzle-orm";
+import { eq, and, desc, count, gte, lt, asc, lte, sql, or, ilike } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 export interface IStorage {
@@ -116,6 +129,38 @@ export interface IStorage {
   // User notification preferences methods
   getUserNotificationPreferences(userId: string): Promise<UserNotificationPreferences | undefined>;
   createOrUpdateUserNotificationPreferences(preferences: InsertUserNotificationPreferences): Promise<UserNotificationPreferences>;
+
+  // E-commerce: Farmer Crop methods
+  createFarmerCrop(farmerId: string, crop: InsertFarmerCrop): Promise<FarmerCrop>;
+  updateFarmerCrop(cropId: string, farmerId: string, updates: Partial<FarmerCrop>): Promise<FarmerCrop | undefined>;
+  deleteFarmerCrop(cropId: string, farmerId: string): Promise<boolean>;
+  getFarmerCrops(farmerId: string, page?: number, limit?: number): Promise<{ crops: (FarmerCrop & { plant: Plant })[]; total: number; page: number; totalPages: number }>;
+  getFarmerCrop(cropId: string, farmerId?: string): Promise<(FarmerCrop & { plant: Plant }) | undefined>;
+  
+  // E-commerce: Order methods
+  createCropOrder(buyerId: string, order: InsertCropOrder): Promise<CropOrder>;
+  getFarmerOrders(farmerId: string, status?: string, page?: number, limit?: number): Promise<{ orders: (CropOrder & { crop: FarmerCrop & { plant: Plant }; buyer: User })[]; total: number; page: number; totalPages: number }>;
+  getFarmerOrder(orderId: string, farmerId: string): Promise<(CropOrder & { crop: FarmerCrop & { plant: Plant }; buyer: User }) | undefined>;
+  getBuyerOrders(buyerId: string, status?: string, page?: number, limit?: number): Promise<{ orders: (CropOrder & { crop: FarmerCrop & { plant: Plant }; farmer: User })[]; total: number; page: number; totalPages: number }>;
+  markOrderAsDelivered(orderId: string, farmerId: string): Promise<CropOrder | undefined>;
+
+  // E-commerce: Search and browse methods
+  searchAvailableCrops(params: CropSearchParams): Promise<{ crops: (FarmerCrop & { plant: Plant; farmer: User })[]; total: number; page: number; totalPages: number }>;
+  getAvailableCropsByCategory(plantCategory?: string, page?: number, limit?: number): Promise<{ crops: (FarmerCrop & { plant: Plant; farmer: User })[]; total: number; page: number; totalPages: number }>;
+  getSoonToBeHarvestedCrops(plantCategory?: string, page?: number, limit?: number): Promise<{ crops: (FarmerCrop & { plant: Plant; farmer: User })[]; total: number; page: number; totalPages: number }>;
+
+  // E-commerce: Notification methods
+  createCropNotification(notification: InsertCropNotification): Promise<CropNotification>;
+  notifyBuyersAboutCrop(cropId: string, farmerId: string, message: string, notificationType: string): Promise<void>;
+  getBuyerNotifications(buyerId: string, page?: number, limit?: number): Promise<{ notifications: (CropNotification & { crop: FarmerCrop & { plant: Plant }; farmer: User })[]; total: number; page: number; totalPages: number }>;
+  markNotificationAsRead(notificationId: string, buyerId: string): Promise<boolean>;
+
+  // E-commerce: Delivery location methods
+  createDeliveryLocation(userId: string, location: InsertDeliveryLocation): Promise<DeliveryLocation>;
+  getUserDeliveryLocations(userId: string): Promise<DeliveryLocation[]>;
+  updateDeliveryLocation(locationId: string, userId: string, updates: Partial<DeliveryLocation>): Promise<DeliveryLocation | undefined>;
+  deleteDeliveryLocation(locationId: string, userId: string): Promise<boolean>;
+  setDefaultDeliveryLocation(locationId: string, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -585,6 +630,533 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return newPreferences;
     }
+  }
+
+  // E-commerce: Farmer Crop methods
+  async createFarmerCrop(farmerId: string, crop: InsertFarmerCrop): Promise<FarmerCrop> {
+    const [farmerCrop] = await db
+      .insert(farmerCrops)
+      .values({
+        ...crop,
+        farmerId,
+        availableQuantity: crop.totalQuantity, // Initially all quantity is available
+      })
+      .returning();
+    return farmerCrop;
+  }
+
+  async updateFarmerCrop(cropId: string, farmerId: string, updates: Partial<FarmerCrop>): Promise<FarmerCrop | undefined> {
+    // Ensure farmer can only update their own crops
+    const [farmerCrop] = await db
+      .update(farmerCrops)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(farmerCrops.id, cropId), eq(farmerCrops.farmerId, farmerId)))
+      .returning();
+    return farmerCrop || undefined;
+  }
+
+  async deleteFarmerCrop(cropId: string, farmerId: string): Promise<boolean> {
+    // Soft delete by setting isActive to false
+    const result = await db
+      .update(farmerCrops)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(and(eq(farmerCrops.id, cropId), eq(farmerCrops.farmerId, farmerId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async getFarmerCrops(farmerId: string, page = 1, limit = 20): Promise<{ crops: (FarmerCrop & { plant: Plant })[]; total: number; page: number; totalPages: number }> {
+    const offset = (page - 1) * limit;
+    
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(farmerCrops)
+      .where(and(eq(farmerCrops.farmerId, farmerId), eq(farmerCrops.isActive, true)));
+
+    // Get crops with plants
+    const crops = await db
+      .select({
+        ...farmerCrops,
+        plant: plants,
+      })
+      .from(farmerCrops)
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .where(and(eq(farmerCrops.farmerId, farmerId), eq(farmerCrops.isActive, true)))
+      .orderBy(desc(farmerCrops.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const total = totalResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      crops: crops.map(row => ({
+        ...row.farmerCrops,
+        plant: row.plant,
+      })),
+      total,
+      page,
+      totalPages,
+    };
+  }
+
+  async getFarmerCrop(cropId: string, farmerId?: string): Promise<(FarmerCrop & { plant: Plant }) | undefined> {
+    const conditions = [eq(farmerCrops.id, cropId), eq(farmerCrops.isActive, true)];
+    if (farmerId) {
+      conditions.push(eq(farmerCrops.farmerId, farmerId));
+    }
+
+    const [result] = await db
+      .select({
+        ...farmerCrops,
+        plant: plants,
+      })
+      .from(farmerCrops)
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .where(and(...conditions));
+
+    if (!result) return undefined;
+
+    return {
+      ...result.farmerCrops,
+      plant: result.plant,
+    };
+  }
+
+  // E-commerce: Order methods
+  async createCropOrder(buyerId: string, order: InsertCropOrder): Promise<CropOrder> {
+    // Get crop details for price and farmer info
+    const crop = await this.getFarmerCrop(order.cropId);
+    if (!crop) {
+      throw new Error("Crop not found");
+    }
+
+    // Calculate pricing
+    const pricePerUnit = crop.pricePerUnit;
+    const subtotal = order.quantityOrdered * pricePerUnit;
+    const total = subtotal + order.deliveryFee;
+
+    const [cropOrder] = await db
+      .insert(cropOrders)
+      .values({
+        ...order,
+        buyerId,
+        farmerId: crop.farmerId,
+        pricePerUnit,
+        subtotal,
+        total,
+      })
+      .returning();
+
+    // Update available quantity in crop
+    await db
+      .update(farmerCrops)
+      .set({ 
+        availableQuantity: sql`${farmerCrops.availableQuantity} - ${order.quantityOrdered}`,
+        updatedAt: new Date()
+      })
+      .where(eq(farmerCrops.id, order.cropId));
+
+    return cropOrder;
+  }
+
+  async getFarmerOrders(farmerId: string, status?: string, page = 1, limit = 20): Promise<{ orders: (CropOrder & { crop: FarmerCrop & { plant: Plant }; buyer: User })[]; total: number; page: number; totalPages: number }> {
+    const offset = (page - 1) * limit;
+    
+    const conditions = [eq(cropOrders.farmerId, farmerId)];
+    if (status) {
+      conditions.push(eq(cropOrders.status, status));
+    }
+
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(cropOrders)
+      .where(and(...conditions));
+
+    // Get orders with crop and buyer details
+    const orders = await db
+      .select({
+        order: cropOrders,
+        crop: farmerCrops,
+        plant: plants,
+        buyer: users,
+      })
+      .from(cropOrders)
+      .innerJoin(farmerCrops, eq(cropOrders.cropId, farmerCrops.id))
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .innerJoin(users, eq(cropOrders.buyerId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(cropOrders.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const total = totalResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      orders: orders.map(row => ({
+        ...row.order,
+        crop: { ...row.crop, plant: row.plant },
+        buyer: row.buyer,
+      })),
+      total,
+      page,
+      totalPages,
+    };
+  }
+
+  async getFarmerOrder(orderId: string, farmerId: string): Promise<(CropOrder & { crop: FarmerCrop & { plant: Plant }; buyer: User }) | undefined> {
+    const [result] = await db
+      .select({
+        order: cropOrders,
+        crop: farmerCrops,
+        plant: plants,
+        buyer: users,
+      })
+      .from(cropOrders)
+      .innerJoin(farmerCrops, eq(cropOrders.cropId, farmerCrops.id))
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .innerJoin(users, eq(cropOrders.buyerId, users.id))
+      .where(and(eq(cropOrders.id, orderId), eq(cropOrders.farmerId, farmerId)));
+
+    if (!result) return undefined;
+
+    return {
+      ...result.order,
+      crop: { ...result.crop, plant: result.plant },
+      buyer: result.buyer,
+    };
+  }
+
+  async getBuyerOrders(buyerId: string, status?: string, page = 1, limit = 20): Promise<{ orders: (CropOrder & { crop: FarmerCrop & { plant: Plant }; farmer: User })[]; total: number; page: number; totalPages: number }> {
+    const offset = (page - 1) * limit;
+    
+    const conditions = [eq(cropOrders.buyerId, buyerId)];
+    if (status) {
+      conditions.push(eq(cropOrders.status, status));
+    }
+
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(cropOrders)
+      .where(and(...conditions));
+
+    // Get orders with crop and farmer details
+    const orders = await db
+      .select({
+        order: cropOrders,
+        crop: farmerCrops,
+        plant: plants,
+        farmer: users,
+      })
+      .from(cropOrders)
+      .innerJoin(farmerCrops, eq(cropOrders.cropId, farmerCrops.id))
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .innerJoin(users, eq(cropOrders.farmerId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(cropOrders.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const total = totalResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      orders: orders.map(row => ({
+        ...row.order,
+        crop: { ...row.crop, plant: row.plant },
+        farmer: row.farmer,
+      })),
+      total,
+      page,
+      totalPages,
+    };
+  }
+
+  async markOrderAsDelivered(orderId: string, farmerId: string): Promise<CropOrder | undefined> {
+    const [order] = await db
+      .update(cropOrders)
+      .set({ 
+        status: 'delivered',
+        deliveredAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(and(eq(cropOrders.id, orderId), eq(cropOrders.farmerId, farmerId)))
+      .returning();
+    return order || undefined;
+  }
+
+  // E-commerce: Search and browse methods
+  async searchAvailableCrops(params: CropSearchParams): Promise<{ crops: (FarmerCrop & { plant: Plant; farmer: User })[]; total: number; page: number; totalPages: number }> {
+    const { query, plantCategory, state, lga, minPrice, maxPrice, unit, page = 1, limit = 20 } = params;
+    const offset = (page - 1) * limit;
+    
+    const conditions = [
+      eq(farmerCrops.isActive, true),
+      lte(farmerCrops.harvestDate, new Date()), // Already harvested
+      sql`${farmerCrops.availableQuantity} > 0`, // Has stock
+    ];
+
+    if (query) {
+      conditions.push(
+        or(
+          ilike(plants.name, `%${query}%`),
+          ilike(farmerCrops.description, `%${query}%`)
+        )
+      );
+    }
+
+    if (plantCategory) {
+      conditions.push(eq(plants.id, plantCategory));
+    }
+
+    if (state) {
+      conditions.push(eq(farmerCrops.state, state));
+    }
+
+    if (lga) {
+      conditions.push(eq(farmerCrops.lga, lga));
+    }
+
+    if (unit) {
+      conditions.push(eq(farmerCrops.unit, unit));
+    }
+
+    if (minPrice !== undefined) {
+      conditions.push(gte(farmerCrops.pricePerUnit, minPrice));
+    }
+
+    if (maxPrice !== undefined) {
+      conditions.push(lte(farmerCrops.pricePerUnit, maxPrice));
+    }
+
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(farmerCrops)
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .where(and(...conditions));
+
+    // Get crops
+    const crops = await db
+      .select({
+        crop: farmerCrops,
+        plant: plants,
+        farmer: users,
+      })
+      .from(farmerCrops)
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .innerJoin(users, eq(farmerCrops.farmerId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(farmerCrops.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const total = totalResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      crops: crops.map(row => ({
+        ...row.crop,
+        plant: row.plant,
+        farmer: row.farmer,
+      })),
+      total,
+      page,
+      totalPages,
+    };
+  }
+
+  async getAvailableCropsByCategory(plantCategory?: string, page = 1, limit = 20): Promise<{ crops: (FarmerCrop & { plant: Plant; farmer: User })[]; total: number; page: number; totalPages: number }> {
+    return this.searchAvailableCrops({
+      plantCategory,
+      page,
+      limit,
+    });
+  }
+
+  async getSoonToBeHarvestedCrops(plantCategory?: string, page = 1, limit = 20): Promise<{ crops: (FarmerCrop & { plant: Plant; farmer: User })[]; total: number; page: number; totalPages: number }> {
+    const offset = (page - 1) * limit;
+    
+    const conditions = [
+      eq(farmerCrops.isActive, true),
+      gte(farmerCrops.harvestDate, new Date()), // Not yet harvested
+      sql`${farmerCrops.availableQuantity} > 0`, // Has stock
+    ];
+
+    if (plantCategory) {
+      conditions.push(eq(plants.id, plantCategory));
+    }
+
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(farmerCrops)
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .where(and(...conditions));
+
+    // Get crops
+    const crops = await db
+      .select({
+        crop: farmerCrops,
+        plant: plants,
+        farmer: users,
+      })
+      .from(farmerCrops)
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .innerJoin(users, eq(farmerCrops.farmerId, users.id))
+      .where(and(...conditions))
+      .orderBy(asc(farmerCrops.harvestDate)) // Sort by harvest date (earliest first)
+      .limit(limit)
+      .offset(offset);
+
+    const total = totalResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      crops: crops.map(row => ({
+        ...row.crop,
+        plant: row.plant,
+        farmer: row.farmer,
+      })),
+      total,
+      page,
+      totalPages,
+    };
+  }
+
+  // E-commerce: Notification methods
+  async createCropNotification(notification: InsertCropNotification): Promise<CropNotification> {
+    const [cropNotification] = await db
+      .insert(cropNotifications)
+      .values(notification)
+      .returning();
+    return cropNotification;
+  }
+
+  async notifyBuyersAboutCrop(cropId: string, farmerId: string, message: string, notificationType: string): Promise<void> {
+    // Find all buyers who have previously ordered from this farmer or this crop
+    const buyers = await db
+      .selectDistinct({ buyerId: cropOrders.buyerId })
+      .from(cropOrders)
+      .where(or(eq(cropOrders.farmerId, farmerId), eq(cropOrders.cropId, cropId)));
+
+    // Create notifications for all interested buyers
+    const notifications = buyers.map(buyer => ({
+      cropId,
+      buyerId: buyer.buyerId,
+      farmerId,
+      message,
+      notificationType,
+    }));
+
+    if (notifications.length > 0) {
+      await db.insert(cropNotifications).values(notifications);
+    }
+  }
+
+  async getBuyerNotifications(buyerId: string, page = 1, limit = 20): Promise<{ notifications: (CropNotification & { crop: FarmerCrop & { plant: Plant }; farmer: User })[]; total: number; page: number; totalPages: number }> {
+    const offset = (page - 1) * limit;
+
+    // Get total count
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(cropNotifications)
+      .where(eq(cropNotifications.buyerId, buyerId));
+
+    // Get notifications with details
+    const notifications = await db
+      .select({
+        notification: cropNotifications,
+        crop: farmerCrops,
+        plant: plants,
+        farmer: users,
+      })
+      .from(cropNotifications)
+      .innerJoin(farmerCrops, eq(cropNotifications.cropId, farmerCrops.id))
+      .innerJoin(plants, eq(farmerCrops.plantId, plants.id))
+      .innerJoin(users, eq(cropNotifications.farmerId, users.id))
+      .where(eq(cropNotifications.buyerId, buyerId))
+      .orderBy(desc(cropNotifications.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const total = totalResult.count;
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      notifications: notifications.map(row => ({
+        ...row.notification,
+        crop: { ...row.crop, plant: row.plant },
+        farmer: row.farmer,
+      })),
+      total,
+      page,
+      totalPages,
+    };
+  }
+
+  async markNotificationAsRead(notificationId: string, buyerId: string): Promise<boolean> {
+    const result = await db
+      .update(cropNotifications)
+      .set({ isRead: true })
+      .where(and(eq(cropNotifications.id, notificationId), eq(cropNotifications.buyerId, buyerId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  // E-commerce: Delivery location methods
+  async createDeliveryLocation(userId: string, location: InsertDeliveryLocation): Promise<DeliveryLocation> {
+    const [deliveryLocation] = await db
+      .insert(deliveryLocations)
+      .values({ ...location, userId })
+      .returning();
+    return deliveryLocation;
+  }
+
+  async getUserDeliveryLocations(userId: string): Promise<DeliveryLocation[]> {
+    return await db
+      .select()
+      .from(deliveryLocations)
+      .where(eq(deliveryLocations.userId, userId))
+      .orderBy(desc(deliveryLocations.isDefault), desc(deliveryLocations.createdAt));
+  }
+
+  async updateDeliveryLocation(locationId: string, userId: string, updates: Partial<DeliveryLocation>): Promise<DeliveryLocation | undefined> {
+    const [location] = await db
+      .update(deliveryLocations)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(deliveryLocations.id, locationId), eq(deliveryLocations.userId, userId)))
+      .returning();
+    return location || undefined;
+  }
+
+  async deleteDeliveryLocation(locationId: string, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(deliveryLocations)
+      .where(and(eq(deliveryLocations.id, locationId), eq(deliveryLocations.userId, userId)))
+      .returning();
+    return result.length > 0;
+  }
+
+  async setDefaultDeliveryLocation(locationId: string, userId: string): Promise<boolean> {
+    // First, unset all current defaults for this user
+    await db
+      .update(deliveryLocations)
+      .set({ isDefault: false, updatedAt: new Date() })
+      .where(eq(deliveryLocations.userId, userId));
+
+    // Then set the new default
+    const result = await db
+      .update(deliveryLocations)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(and(eq(deliveryLocations.id, locationId), eq(deliveryLocations.userId, userId)))
+      .returning();
+
+    return result.length > 0;
   }
 }
 

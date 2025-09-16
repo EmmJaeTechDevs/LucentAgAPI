@@ -149,6 +149,74 @@ export const userNotificationPreferences = pgTable("user_notification_preference
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
+// E-commerce tables for crop trading
+export const farmerCrops = pgTable("farmer_crops", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  farmerId: varchar("farmer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  plantId: varchar("plant_id").notNull().references(() => plants.id, { onDelete: "cascade" }),
+  totalQuantity: integer("total_quantity").notNull(), // Total amount being grown
+  availableQuantity: integer("available_quantity").notNull(), // Amount left for sale
+  unit: text("unit").notNull(), // 'bags', 'baskets', 'kg'
+  pricePerUnit: integer("price_per_unit").notNull(), // Price in cents (for precision)
+  harvestDate: timestamp("harvest_date").notNull(), // When crop will be ready
+  state: text("state").notNull(), // Nigerian state
+  lga: text("lga").notNull(), // Local Government Area
+  farmAddress: text("farm_address"), // Detailed farm address
+  description: text("description"), // Additional crop details
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const cropOrders = pgTable("crop_orders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cropId: varchar("crop_id").notNull().references(() => farmerCrops.id, { onDelete: "cascade" }),
+  buyerId: varchar("buyer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  farmerId: varchar("farmer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  quantityOrdered: integer("quantity_ordered").notNull(),
+  pricePerUnit: integer("price_per_unit").notNull(), // Locked price at time of order
+  subtotal: integer("subtotal").notNull(), // quantity * pricePerUnit
+  deliveryFee: integer("delivery_fee").default(0), // Calculated delivery cost
+  total: integer("total").notNull(), // subtotal + deliveryFee
+  status: text("status").notNull().default('pending'), // 'pending', 'confirmed', 'delivered', 'cancelled'
+  
+  // Delivery details
+  deliveryAddress: text("delivery_address").notNull(),
+  deliveryState: text("delivery_state").notNull(),
+  deliveryLga: text("delivery_lga").notNull(),
+  deliveryNote: text("delivery_note"), // Special instructions
+  
+  // Timestamps
+  orderDate: timestamp("order_date").default(sql`now()`),
+  deliveredAt: timestamp("delivered_at"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
+export const cropNotifications = pgTable("crop_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cropId: varchar("crop_id").notNull().references(() => farmerCrops.id, { onDelete: "cascade" }),
+  buyerId: varchar("buyer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  farmerId: varchar("farmer_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
+  isRead: boolean("is_read").default(false),
+  notificationType: text("notification_type").notNull(), // 'crop_ready', 'price_change', 'quantity_update'
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+export const deliveryLocations = pgTable("delivery_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(), // e.g., "Home", "Office", "Warehouse"
+  address: text("address").notNull(),
+  state: text("state").notNull(),
+  lga: text("lga").notNull(),
+  phoneNumber: text("phone_number"),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").default(sql`now()`),
+  updatedAt: timestamp("updated_at").default(sql`now()`),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   otpCodes: many(otpCodes),
@@ -159,6 +227,12 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   farmerPlants: many(farmerPlants),
   farmerAnswers: many(farmerAnswers),
   notificationPreferences: one(userNotificationPreferences),
+  // E-commerce relations
+  farmerCrops: many(farmerCrops, { relationName: "farmer_crops" }),
+  buyerOrders: many(cropOrders, { relationName: "buyer_orders" }),
+  farmerOrders: many(cropOrders, { relationName: "farmer_orders" }),
+  cropNotifications: many(cropNotifications),
+  deliveryLocations: many(deliveryLocations),
 }));
 
 export const otpCodesRelations = relations(otpCodes, ({ one }) => ({
@@ -239,6 +313,60 @@ export const farmerAnswersRelations = relations(farmerAnswers, ({ one }) => ({
 export const userNotificationPreferencesRelations = relations(userNotificationPreferences, ({ one }) => ({
   user: one(users, {
     fields: [userNotificationPreferences.userId],
+    references: [users.id],
+  }),
+}));
+
+// E-commerce relations
+export const farmerCropsRelations = relations(farmerCrops, ({ one, many }) => ({
+  farmer: one(users, {
+    fields: [farmerCrops.farmerId],
+    references: [users.id],
+    relationName: "farmer_crops"
+  }),
+  plant: one(plants, {
+    fields: [farmerCrops.plantId],
+    references: [plants.id],
+  }),
+  orders: many(cropOrders),
+  notifications: many(cropNotifications),
+}));
+
+export const cropOrdersRelations = relations(cropOrders, ({ one }) => ({
+  crop: one(farmerCrops, {
+    fields: [cropOrders.cropId],
+    references: [farmerCrops.id],
+  }),
+  buyer: one(users, {
+    fields: [cropOrders.buyerId],
+    references: [users.id],
+    relationName: "buyer_orders"
+  }),
+  farmer: one(users, {
+    fields: [cropOrders.farmerId],
+    references: [users.id],
+    relationName: "farmer_orders"
+  }),
+}));
+
+export const cropNotificationsRelations = relations(cropNotifications, ({ one }) => ({
+  crop: one(farmerCrops, {
+    fields: [cropNotifications.cropId],
+    references: [farmerCrops.id],
+  }),
+  buyer: one(users, {
+    fields: [cropNotifications.buyerId],
+    references: [users.id],
+  }),
+  farmer: one(users, {
+    fields: [cropNotifications.farmerId],
+    references: [users.id],
+  }),
+}));
+
+export const deliveryLocationsRelations = relations(deliveryLocations, ({ one }) => ({
+  user: one(users, {
+    fields: [deliveryLocations.userId],
     references: [users.id],
   }),
 }));
@@ -490,6 +618,20 @@ export type FarmerAnswer = typeof farmerAnswers.$inferSelect;
 export type UserNotificationPreferences = typeof userNotificationPreferences.$inferSelect;
 export type InsertUserNotificationPreferences = typeof userNotificationPreferences.$inferInsert;
 
+// E-commerce types
+export type FarmerCrop = typeof farmerCrops.$inferSelect;
+export type InsertFarmerCrop = z.infer<typeof insertFarmerCropSchema>;
+export type CropOrder = typeof cropOrders.$inferSelect;
+export type InsertCropOrder = z.infer<typeof insertCropOrderSchema>;
+export type CropNotification = typeof cropNotifications.$inferSelect;
+export type InsertCropNotification = z.infer<typeof insertCropNotificationSchema>;
+export type DeliveryLocation = typeof deliveryLocations.$inferSelect;
+export type InsertDeliveryLocation = z.infer<typeof insertDeliveryLocationSchema>;
+
+// Search and filter types
+export type CropSearchParams = z.infer<typeof cropSearchSchema>;
+export type DeliveryFeeRequest = z.infer<typeof deliveryFeeRequestSchema>;
+
 export const insertUserNotificationPreferencesSchema = createInsertSchema(userNotificationPreferences).omit({
   id: true,
   userId: true, // Remove userId from client schema - security fix
@@ -500,6 +642,109 @@ export const insertUserNotificationPreferencesSchema = createInsertSchema(userNo
   emailEnabled: z.boolean().optional(),
   whatsappEnabled: z.boolean().optional(),
   inAppEnabled: z.boolean().optional(),
+});
+
+// E-commerce schemas
+export const insertFarmerCropSchema = createInsertSchema(farmerCrops).omit({
+  id: true,
+  farmerId: true, // Injected from auth
+  availableQuantity: true, // Defaults to totalQuantity
+  isActive: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  plantId: z.string().min(1, "Plant selection is required"),
+  totalQuantity: z.number().int().min(1, "Quantity must be at least 1"),
+  unit: z.enum(["bags", "baskets", "kg"], {
+    required_error: "Unit is required",
+    invalid_type_error: "Unit must be bags, baskets, or kg"
+  }),
+  pricePerUnit: z.number().int().min(1, "Price must be greater than 0"),
+  harvestDate: z.date({
+    required_error: "Harvest date is required",
+    invalid_type_error: "Invalid harvest date"
+  }).refine(date => date > new Date(), {
+    message: "Harvest date must be in the future"
+  }),
+  state: z.string().min(1, "State is required"),
+  lga: z.string().min(1, "Local Government Area is required"),
+  farmAddress: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export const insertCropOrderSchema = createInsertSchema(cropOrders).omit({
+  id: true,
+  buyerId: true, // Injected from auth
+  farmerId: true, // Derived from crop
+  pricePerUnit: true, // Locked from crop price
+  subtotal: true, // Calculated
+  total: true, // Calculated
+  status: true, // Defaults to pending
+  orderDate: true,
+  deliveredAt: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  cropId: z.string().min(1, "Crop selection is required"),
+  quantityOrdered: z.number().int().min(1, "Quantity must be at least 1"),
+  deliveryFee: z.number().int().min(0, "Delivery fee cannot be negative").default(0),
+  deliveryAddress: z.string().min(1, "Delivery address is required"),
+  deliveryState: z.string().min(1, "Delivery state is required"),
+  deliveryLga: z.string().min(1, "Delivery LGA is required"),
+  deliveryNote: z.string().optional(),
+});
+
+export const insertCropNotificationSchema = createInsertSchema(cropNotifications).omit({
+  id: true,
+  buyerId: true, // Injected from context
+  farmerId: true, // Derived from crop
+  isRead: true,
+  createdAt: true,
+}).extend({
+  cropId: z.string().min(1, "Crop ID is required"),
+  message: z.string().min(1, "Message is required"),
+  notificationType: z.enum(["crop_ready", "price_change", "quantity_update"], {
+    required_error: "Notification type is required"
+  }),
+});
+
+export const insertDeliveryLocationSchema = createInsertSchema(deliveryLocations).omit({
+  id: true,
+  userId: true, // Injected from auth
+  isDefault: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Location name is required"),
+  address: z.string().min(1, "Address is required"),
+  state: z.string().min(1, "State is required"),
+  lga: z.string().min(1, "LGA is required"),
+  phoneNumber: z.string().optional(),
+});
+
+// Search and filter schemas
+export const cropSearchSchema = z.object({
+  query: z.string().optional(),
+  plantCategory: z.string().optional(),
+  state: z.string().optional(),
+  lga: z.string().optional(),
+  minPrice: z.number().int().min(0).optional(),
+  maxPrice: z.number().int().min(0).optional(),
+  unit: z.enum(["bags", "baskets", "kg"]).optional(),
+  page: z.number().int().min(1).default(1),
+  limit: z.number().int().min(1).max(100).default(20),
+});
+
+export const deliveryFeeRequestSchema = z.object({
+  fromState: z.string().min(1, "Origin state is required"),
+  fromLga: z.string().min(1, "Origin LGA is required"),
+  fromAddress: z.string().optional(),
+  toState: z.string().min(1, "Destination state is required"),
+  toLga: z.string().min(1, "Destination LGA is required"),
+  toAddress: z.string().min(1, "Destination address is required"),
+  weight: z.number().min(0.1, "Weight must be greater than 0"),
+  unit: z.enum(["bags", "baskets", "kg"]),
+  quantity: z.number().int().min(1, "Quantity must be at least 1"),
 });
 
 // Login schemas
