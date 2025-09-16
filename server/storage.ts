@@ -677,7 +677,7 @@ export class DatabaseStorage implements IStorage {
     // Get crops with plants
     const crops = await db
       .select({
-        ...farmerCrops,
+        crop: farmerCrops,
         plant: plants,
       })
       .from(farmerCrops)
@@ -692,7 +692,7 @@ export class DatabaseStorage implements IStorage {
 
     return {
       crops: crops.map(row => ({
-        ...row.farmerCrops,
+        ...row.crop,
         plant: row.plant,
       })),
       total,
@@ -709,7 +709,7 @@ export class DatabaseStorage implements IStorage {
 
     const [result] = await db
       .select({
-        ...farmerCrops,
+        crop: farmerCrops,
         plant: plants,
       })
       .from(farmerCrops)
@@ -719,7 +719,7 @@ export class DatabaseStorage implements IStorage {
     if (!result) return undefined;
 
     return {
-      ...result.farmerCrops,
+      ...result.crop,
       plant: result.plant,
     };
   }
@@ -905,7 +905,7 @@ export class DatabaseStorage implements IStorage {
         or(
           ilike(plants.name, `%${query}%`),
           ilike(farmerCrops.description, `%${query}%`)
-        )
+        )!
       );
     }
 
@@ -1032,7 +1032,7 @@ export class DatabaseStorage implements IStorage {
   async createCropNotification(notification: InsertCropNotification): Promise<CropNotification> {
     const [cropNotification] = await db
       .insert(cropNotifications)
-      .values(notification)
+      .values(notification as any)
       .returning();
     return cropNotification;
   }
@@ -1054,7 +1054,7 @@ export class DatabaseStorage implements IStorage {
     }));
 
     if (notifications.length > 0) {
-      await db.insert(cropNotifications).values(notifications);
+      await db.insert(cropNotifications).values(notifications as any);
     }
   }
 

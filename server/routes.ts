@@ -16,7 +16,13 @@ import {
   resetPasswordSchema,
   insertFarmerPlantSchema,
   insertFarmerAnswerSchema,
-  insertUserNotificationPreferencesSchema
+  insertUserNotificationPreferencesSchema,
+  insertFarmerCropSchema,
+  insertCropOrderSchema,
+  insertCropNotificationSchema,
+  insertDeliveryLocationSchema,
+  cropSearchSchema,
+  deliveryFeeRequestSchema
 } from "@shared/schema";
 import { z } from "zod";
 
@@ -2633,6 +2639,984 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ? 'Notification preferences created successfully'
           : 'Notification preferences updated successfully',
         preferences
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  // ================================
+  // E-COMMERCE: FARMER CROP MANAGEMENT ROUTES
+  // ================================
+
+  /**
+   * @swagger
+   * /api/farmer/crops:
+   *   post:
+   *     summary: Create or Update Farmer Crop (Idempotent)
+   *     description: Create a new crop listing or update an existing one for the authenticated farmer
+   *     tags: [Farmer - Crops]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [plantId, totalQuantity, unit, pricePerUnit, harvestDate, state, lga]
+   *             properties:
+   *               plantId:
+   *                 type: string
+   *                 example: "plant-maize"
+   *               totalQuantity:
+   *                 type: integer
+   *                 minimum: 1
+   *                 example: 100
+   *               unit:
+   *                 type: string
+   *                 enum: [bags, baskets, kg]
+   *                 example: "bags"
+   *               pricePerUnit:
+   *                 type: integer
+   *                 minimum: 1
+   *                 description: Price in cents
+   *                 example: 5000
+   *               harvestDate:
+   *                 type: string
+   *                 format: date-time
+   *                 example: "2024-03-15T00:00:00Z"
+   *               state:
+   *                 type: string
+   *                 example: "Lagos"
+   *               lga:
+   *                 type: string
+   *                 example: "Ikeja"
+   *               farmAddress:
+   *                 type: string
+   *                 example: "Plot 123, Farm Road, Ikeja"
+   *               description:
+   *                 type: string
+   *                 example: "High-quality maize, organic farming"
+   *     responses:
+   *       201:
+   *         description: Crop created successfully
+   *       200:
+   *         description: Crop updated successfully
+   *       400:
+   *         description: Validation error
+   *       401:
+   *         description: Unauthorized
+   */
+  app.post('/api/farmer/crops', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const validatedData = insertFarmerCropSchema.parse(req.body);
+      const crop = await storage.createFarmerCrop(user.id, validatedData);
+      
+      res.status(201).json({
+        message: 'Crop created successfully',
+        crop
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/crops:
+   *   get:
+   *     summary: Get Farmer's Crops (Paginated)
+   *     description: Retrieve all crops for the authenticated farmer with pagination
+   *     tags: [Farmer - Crops]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Crops retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 crops:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                 total:
+   *                   type: integer
+   *                 page:
+   *                   type: integer
+   *                 totalPages:
+   *                   type: integer
+   *       401:
+   *         description: Unauthorized
+   */
+  app.get('/api/farmer/crops', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getFarmerCrops(user.id, page, limit);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/crops/{cropId}:
+   *   get:
+   *     summary: Get Single Farmer Crop
+   *     description: Retrieve a specific crop by ID for the authenticated farmer
+   *     tags: [Farmer - Crops]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: cropId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Crop retrieved successfully
+   *       404:
+   *         description: Crop not found
+   *       401:
+   *         description: Unauthorized
+   */
+  app.get('/api/farmer/crops/:cropId', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const crop = await storage.getFarmerCrop(req.params.cropId, user.id);
+      if (!crop) {
+        return res.status(404).json({ message: 'Crop not found' });
+      }
+
+      res.json({ crop });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/crops/{cropId}:
+   *   put:
+   *     summary: Update Farmer Crop
+   *     description: Update an existing crop for the authenticated farmer
+   *     tags: [Farmer - Crops]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: cropId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               totalQuantity:
+   *                 type: integer
+   *                 minimum: 1
+   *               pricePerUnit:
+   *                 type: integer
+   *                 minimum: 1
+   *               harvestDate:
+   *                 type: string
+   *                 format: date-time
+   *               description:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Crop updated successfully
+   *       404:
+   *         description: Crop not found
+   *       400:
+   *         description: Validation error
+   *       401:
+   *         description: Unauthorized
+   */
+  app.put('/api/farmer/crops/:cropId', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const updates = req.body;
+      const crop = await storage.updateFarmerCrop(req.params.cropId, user.id, updates);
+      
+      if (!crop) {
+        return res.status(404).json({ message: 'Crop not found' });
+      }
+
+      res.json({
+        message: 'Crop updated successfully',
+        crop
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/crops/{cropId}:
+   *   delete:
+   *     summary: Delete Farmer Crop
+   *     description: Delete (deactivate) a crop for the authenticated farmer
+   *     tags: [Farmer - Crops]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: cropId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Crop deleted successfully
+   *       404:
+   *         description: Crop not found
+   *       401:
+   *         description: Unauthorized
+   */
+  app.delete('/api/farmer/crops/:cropId', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const success = await storage.deleteFarmerCrop(req.params.cropId, user.id);
+      
+      if (!success) {
+        return res.status(404).json({ message: 'Crop not found' });
+      }
+
+      res.json({ message: 'Crop deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ================================
+  // E-COMMERCE: FARMER ORDER MANAGEMENT ROUTES
+  // ================================
+
+  /**
+   * @swagger
+   * /api/farmer/orders:
+   *   get:
+   *     summary: Get Farmer Orders (Paginated)
+   *     description: Retrieve orders for the authenticated farmer's crops
+   *     tags: [Farmer - Orders]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: status
+   *         in: query
+   *         schema:
+   *           type: string
+   *           enum: [pending, confirmed, delivered, cancelled]
+   *         description: Filter by order status
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Orders retrieved successfully
+   *       401:
+   *         description: Unauthorized
+   */
+  app.get('/api/farmer/orders', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const status = req.query.status as string;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getFarmerOrders(user.id, status, page, limit);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/orders/{orderId}:
+   *   get:
+   *     summary: Get Single Farmer Order
+   *     description: Retrieve a specific order by ID for the authenticated farmer
+   *     tags: [Farmer - Orders]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: orderId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Order retrieved successfully
+   *       404:
+   *         description: Order not found
+   *       401:
+   *         description: Unauthorized
+   */
+  app.get('/api/farmer/orders/:orderId', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const order = await storage.getFarmerOrder(req.params.orderId, user.id);
+      if (!order) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+
+      res.json({ order });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/farmer/orders/{orderId}/deliver:
+   *   post:
+   *     summary: Mark Order as Delivered
+   *     description: Mark an order as delivered by the authenticated farmer
+   *     tags: [Farmer - Orders]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: orderId
+   *         in: path
+   *         required: true
+   *         schema:
+   *           type: string
+   *     responses:
+   *       200:
+   *         description: Order marked as delivered successfully
+   *       404:
+   *         description: Order not found
+   *       401:
+   *         description: Unauthorized
+   */
+  app.post('/api/farmer/orders/:orderId/deliver', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'farmer') {
+        return res.status(403).json({ message: 'Access denied. Farmer account required.' });
+      }
+
+      const order = await storage.markOrderAsDelivered(req.params.orderId, user.id);
+      
+      if (!order) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+
+      res.json({
+        message: 'Order marked as delivered successfully',
+        order
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ================================
+  // E-COMMERCE: BUYER ROUTES
+  // ================================
+
+  /**
+   * @swagger
+   * /api/buyer/crops/search:
+   *   get:
+   *     summary: Search Available Crops
+   *     description: Search for available crops with filters
+   *     tags: [Buyer - Browse]
+   *     parameters:
+   *       - name: query
+   *         in: query
+   *         schema:
+   *           type: string
+   *         description: Search query (crop name or description)
+   *       - name: plantCategory
+   *         in: query
+   *         schema:
+   *           type: string
+   *         description: Filter by plant category ID
+   *       - name: state
+   *         in: query
+   *         schema:
+   *           type: string
+   *         description: Filter by state
+   *       - name: lga
+   *         in: query
+   *         schema:
+   *           type: string
+   *         description: Filter by LGA
+   *       - name: minPrice
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 0
+   *         description: Minimum price per unit (in cents)
+   *       - name: maxPrice
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 0
+   *         description: Maximum price per unit (in cents)
+   *       - name: unit
+   *         in: query
+   *         schema:
+   *           type: string
+   *           enum: [bags, baskets, kg]
+   *         description: Filter by unit type
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Crops retrieved successfully
+   *       400:
+   *         description: Invalid search parameters
+   */
+  app.get('/api/buyer/crops/search', async (req, res, next) => {
+    try {
+      const searchParams = cropSearchSchema.parse({
+        ...req.query,
+        page: req.query.page ? parseInt(req.query.page as string) : 1,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : 20,
+        minPrice: req.query.minPrice ? parseInt(req.query.minPrice as string) : undefined,
+        maxPrice: req.query.maxPrice ? parseInt(req.query.maxPrice as string) : undefined,
+      });
+
+      const result = await storage.searchAvailableCrops(searchParams);
+      res.json(result);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid search parameters', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/buyer/crops/available:
+   *   get:
+   *     summary: Get Available Crops for Sale
+   *     description: Get all crops that are currently available for purchase (already harvested)
+   *     tags: [Buyer - Browse]
+   *     parameters:
+   *       - name: plantCategory
+   *         in: query
+   *         schema:
+   *           type: string
+   *         description: Filter by plant category ID
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Available crops retrieved successfully
+   */
+  app.get('/api/buyer/crops/available', async (req, res, next) => {
+    try {
+      const plantCategory = req.query.plantCategory as string;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getAvailableCropsByCategory(plantCategory, page, limit);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/buyer/crops/soon-ready:
+   *   get:
+   *     summary: Get Soon-to-be-Harvested Crops
+   *     description: Get crops that are not yet ready for harvest but will be soon
+   *     tags: [Buyer - Browse]
+   *     parameters:
+   *       - name: plantCategory
+   *         in: query
+   *         schema:
+   *           type: string
+   *         description: Filter by plant category ID
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Soon-to-be-ready crops retrieved successfully
+   */
+  app.get('/api/buyer/crops/soon-ready', async (req, res, next) => {
+    try {
+      const plantCategory = req.query.plantCategory as string;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getSoonToBeHarvestedCrops(plantCategory, page, limit);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/buyer/orders:
+   *   post:
+   *     summary: Place Crop Order
+   *     description: Place an order for a crop as an authenticated buyer
+   *     tags: [Buyer - Orders]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [cropId, quantityOrdered, deliveryAddress, deliveryState, deliveryLga]
+   *             properties:
+   *               cropId:
+   *                 type: string
+   *                 example: "crop-123"
+   *               quantityOrdered:
+   *                 type: integer
+   *                 minimum: 1
+   *                 example: 10
+   *               deliveryFee:
+   *                 type: integer
+   *                 minimum: 0
+   *                 default: 0
+   *                 description: Delivery fee in cents
+   *                 example: 5000
+   *               deliveryAddress:
+   *                 type: string
+   *                 example: "123 Main Street, Victoria Island"
+   *               deliveryState:
+   *                 type: string
+   *                 example: "Lagos"
+   *               deliveryLga:
+   *                 type: string
+   *                 example: "Lagos Island"
+   *               deliveryNote:
+   *                 type: string
+   *                 example: "Please call before delivery"
+   *     responses:
+   *       201:
+   *         description: Order placed successfully
+   *       400:
+   *         description: Validation error or insufficient stock
+   *       401:
+   *         description: Unauthorized
+   */
+  app.post('/api/buyer/orders', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'buyer') {
+        return res.status(403).json({ message: 'Access denied. Buyer account required.' });
+      }
+
+      const validatedData = insertCropOrderSchema.parse(req.body);
+      
+      // Check if crop exists and has sufficient quantity
+      const crop = await storage.getFarmerCrop(validatedData.cropId);
+      if (!crop) {
+        return res.status(400).json({ message: 'Crop not found' });
+      }
+      
+      if (crop.availableQuantity < validatedData.quantityOrdered) {
+        return res.status(400).json({ 
+          message: 'Insufficient stock available',
+          available: crop.availableQuantity,
+          requested: validatedData.quantityOrdered
+        });
+      }
+
+      const order = await storage.createCropOrder(user.id, validatedData);
+      
+      res.status(201).json({
+        message: 'Order placed successfully',
+        order
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/buyer/orders:
+   *   get:
+   *     summary: Get Buyer Orders (Paginated)
+   *     description: Retrieve orders for the authenticated buyer
+   *     tags: [Buyer - Orders]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: status
+   *         in: query
+   *         schema:
+   *           type: string
+   *           enum: [pending, confirmed, delivered, cancelled]
+   *         description: Filter by order status
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Orders retrieved successfully
+   *       401:
+   *         description: Unauthorized
+   */
+  app.get('/api/buyer/orders', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'buyer') {
+        return res.status(403).json({ message: 'Access denied. Buyer account required.' });
+      }
+
+      const status = req.query.status as string;
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getBuyerOrders(user.id, status, page, limit);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/buyer/notifications:
+   *   post:
+   *     summary: Notify Buyer About Crop
+   *     description: Subscribe to notifications for when a specific crop becomes ready
+   *     tags: [Buyer - Notifications]
+   *     security:
+   *       - bearerAuth: []
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [cropId, message, notificationType]
+   *             properties:
+   *               cropId:
+   *                 type: string
+   *                 example: "crop-123"
+   *               message:
+   *                 type: string
+   *                 example: "Please notify me when this crop is ready"
+   *               notificationType:
+   *                 type: string
+   *                 enum: [crop_ready, price_change, quantity_update]
+   *                 example: "crop_ready"
+   *     responses:
+   *       201:
+   *         description: Notification subscription created successfully
+   *       400:
+   *         description: Validation error
+   *       401:
+   *         description: Unauthorized
+   */
+  app.post('/api/buyer/notifications', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'buyer') {
+        return res.status(403).json({ message: 'Access denied. Buyer account required.' });
+      }
+
+      const validatedData = insertCropNotificationSchema.parse(req.body);
+      
+      // Get crop to find farmer ID
+      const crop = await storage.getFarmerCrop(validatedData.cropId);
+      if (!crop) {
+        return res.status(400).json({ message: 'Crop not found' });
+      }
+
+      const notificationData = {
+        ...validatedData,
+        buyerId: user.id,
+        farmerId: crop.farmerId,
+      };
+
+      const notification = await storage.createCropNotification(notificationData);
+      
+      res.status(201).json({
+        message: 'Notification subscription created successfully',
+        notification
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/buyer/notifications:
+   *   get:
+   *     summary: Get Buyer Notifications
+   *     description: Retrieve notifications for the authenticated buyer
+   *     tags: [Buyer - Notifications]
+   *     security:
+   *       - bearerAuth: []
+   *     parameters:
+   *       - name: page
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           default: 1
+   *       - name: limit
+   *         in: query
+   *         schema:
+   *           type: integer
+   *           minimum: 1
+   *           maximum: 100
+   *           default: 20
+   *     responses:
+   *       200:
+   *         description: Notifications retrieved successfully
+   *       401:
+   *         description: Unauthorized
+   */
+  app.get('/api/buyer/notifications', authenticateToken, async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.userType !== 'buyer') {
+        return res.status(403).json({ message: 'Access denied. Buyer account required.' });
+      }
+
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+
+      const result = await storage.getBuyerNotifications(user.id, page, limit);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ================================
+  // E-COMMERCE: DELIVERY FEE CALCULATION
+  // ================================
+
+  /**
+   * @swagger
+   * /api/delivery/calculate-fee:
+   *   post:
+   *     summary: Calculate Delivery Fee
+   *     description: Calculate delivery fee from farm location to delivery address using third-party service
+   *     tags: [Delivery]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [fromState, fromLga, toState, toLga, toAddress, weight, unit, quantity]
+   *             properties:
+   *               fromState:
+   *                 type: string
+   *                 example: "Ogun"
+   *               fromLga:
+   *                 type: string
+   *                 example: "Abeokuta North"
+   *               fromAddress:
+   *                 type: string
+   *                 example: "Farm Road, Abeokuta"
+   *               toState:
+   *                 type: string
+   *                 example: "Lagos"
+   *               toLga:
+   *                 type: string
+   *                 example: "Lagos Island"
+   *               toAddress:
+   *                 type: string
+   *                 example: "123 Victoria Island, Lagos"
+   *               weight:
+   *                 type: number
+   *                 minimum: 0.1
+   *                 example: 50.5
+   *               unit:
+   *                 type: string
+   *                 enum: [bags, baskets, kg]
+   *                 example: "bags"
+   *               quantity:
+   *                 type: integer
+   *                 minimum: 1
+   *                 example: 10
+   *     responses:
+   *       200:
+   *         description: Delivery fee calculated successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 deliveryFee:
+   *                   type: integer
+   *                   description: Delivery fee in cents
+   *                   example: 15000
+   *                 distance:
+   *                   type: number
+   *                   description: Distance in kilometers
+   *                   example: 85.5
+   *                 estimatedDuration:
+   *                   type: string
+   *                   description: Estimated delivery time
+   *                   example: "2-3 business days"
+   *                 provider:
+   *                   type: string
+   *                   example: "Nigerian Logistics Service"
+   *       400:
+   *         description: Validation error or location not found
+   *       503:
+   *         description: Third-party service unavailable
+   */
+  app.post('/api/delivery/calculate-fee', async (req, res, next) => {
+    try {
+      const validatedData = deliveryFeeRequestSchema.parse(req.body);
+      
+      // Mock implementation for demonstration
+      // In production, this would integrate with a real delivery service API
+      const mockDeliveryCalculation = {
+        deliveryFee: Math.floor(Math.random() * 20000 + 5000), // Random fee between 50-250 Naira (in cents)
+        distance: Math.floor(Math.random() * 200 + 10), // Random distance 10-210 km
+        estimatedDuration: "2-4 business days",
+        provider: "Nigerian Express Logistics"
+      };
+
+      res.json({
+        message: 'Delivery fee calculated successfully',
+        ...mockDeliveryCalculation,
+        calculation: {
+          fromLocation: `${validatedData.fromLga}, ${validatedData.fromState}`,
+          toLocation: `${validatedData.toLga}, ${validatedData.toState}`,
+          weight: validatedData.weight,
+          unit: validatedData.unit,
+          quantity: validatedData.quantity
+        }
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
