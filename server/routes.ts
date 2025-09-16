@@ -5,6 +5,7 @@ import { authService } from "./services/auth";
 import { otpService } from "./services/otp";
 import { createLoggingMiddleware, createErrorLoggingMiddleware } from "./middleware/logging";
 import { passwordResetService } from "./services/passwordReset";
+import { deliveryService } from "./services/delivery";
 import { 
   loginSchema, 
   verifyOtpSchema, 
@@ -3597,19 +3598,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/delivery/calculate-fee', async (req, res, next) => {
     try {
       const validatedData = deliveryFeeRequestSchema.parse(req.body);
-      
-      // Mock implementation for demonstration
-      // In production, this would integrate with a real delivery service API
-      const mockDeliveryCalculation = {
-        deliveryFee: Math.floor(Math.random() * 20000 + 5000), // Random fee between 50-250 Naira (in cents)
-        distance: Math.floor(Math.random() * 200 + 10), // Random distance 10-210 km
-        estimatedDuration: "2-4 business days",
-        provider: "Nigerian Express Logistics"
-      };
+      const providerName = req.query.provider as string;
+
+      const deliveryCalculation = await deliveryService.calculateDeliveryFee(
+        validatedData, 
+        providerName
+      );
 
       res.json({
         message: 'Delivery fee calculated successfully',
-        ...mockDeliveryCalculation,
+        ...deliveryCalculation,
+        calculation: {
+          fromLocation: `${validatedData.fromLga}, ${validatedData.fromState}`,
+          toLocation: `${validatedData.toLga}, ${validatedData.toState}`,
+          weight: validatedData.weight,
+          unit: validatedData.unit,
+          quantity: validatedData.quantity
+        }
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
+      
+      // Handle delivery service errors
+      if (error instanceof Error && error.message.includes('API key')) {
+        return res.status(503).json({ 
+          message: 'Delivery service temporarily unavailable',
+          error: 'External API not configured'
+        });
+      }
+
+      next(error);
+    }
+  });
+
+  /**
+   * @swagger
+   * /api/delivery/compare-providers:
+   *   post:
+   *     summary: Compare Delivery Providers
+   *     description: Get delivery quotes from multiple providers and compare prices
+   *     tags: [Delivery]
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             required: [fromState, fromLga, toState, toLga, toAddress, weight, unit, quantity]
+   *             properties:
+   *               fromState:
+   *                 type: string
+   *                 example: "Ogun"
+   *               fromLga:
+   *                 type: string
+   *                 example: "Abeokuta North"
+   *               fromAddress:
+   *                 type: string
+   *                 example: "Farm Road, Abeokuta"
+   *               toState:
+   *                 type: string
+   *                 example: "Lagos"
+   *               toLga:
+   *                 type: string
+   *                 example: "Lagos Island"
+   *               toAddress:
+   *                 type: string
+   *                 example: "123 Victoria Island, Lagos"
+   *               weight:
+   *                 type: number
+   *                 minimum: 0.1
+   *                 example: 50.5
+   *               unit:
+   *                 type: string
+   *                 enum: [bags, baskets, kg]
+   *                 example: "bags"
+   *               quantity:
+   *                 type: integer
+   *                 minimum: 1
+   *                 example: 10
+   *     responses:
+   *       200:
+   *         description: Provider comparison completed successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 message:
+   *                   type: string
+   *                   example: "Delivery providers compared successfully"
+   *                 providers:
+   *                   type: array
+   *                   items:
+   *                     type: object
+   *                     properties:
+   *                       deliveryFee:
+   *                         type: integer
+   *                         description: Delivery fee in cents
+   *                       distance:
+   *                         type: number
+   *                         description: Distance in kilometers
+   *                       estimatedDuration:
+   *                         type: string
+   *                       provider:
+   *                         type: string
+   *                 calculation:
+   *                   type: object
+   *       400:
+   *         description: Validation error
+   *       503:
+   *         description: All delivery services unavailable
+   */
+  app.post('/api/delivery/compare-providers', async (req, res, next) => {
+    try {
+      const validatedData = deliveryFeeRequestSchema.parse(req.body);
+
+      const providerQuotes = await deliveryService.compareProviders(validatedData);
+
+      if (providerQuotes.length === 0) {
+        return res.status(503).json({
+          message: 'All delivery services are currently unavailable',
+          error: 'No providers responded'
+        });
+      }
+
+      res.json({
+        message: 'Delivery providers compared successfully',
+        providers: providerQuotes,
+        cheapest: providerQuotes[0],
         calculation: {
           fromLocation: `${validatedData.fromLga}, ${validatedData.fromState}`,
           toLocation: `${validatedData.toLga}, ${validatedData.toState}`,
@@ -3624,6 +3742,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       next(error);
     }
+  });
+
+  /**
+   * @swagger
+   * /api/delivery/providers:
+   *   get:
+   *     summary: Get Available Delivery Providers
+   *     description: Retrieve a list of all available delivery service providers
+   *     tags: [Delivery]
+   *     responses:
+   *       200:
+   *         description: Available providers retrieved successfully
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 providers:
+   *                   type: array
+   *                   items:
+   *                     type: string
+   *                   example: ["Nigerian Express Logistics", "Google Maps Delivery Calculator", "GIG Logistics"]
+   */
+  app.get('/api/delivery/providers', async (req, res) => {
+    const providers = deliveryService.getAvailableProviders();
+    res.json({
+      providers,
+      total: providers.length
+    });
   });
 
   // Error logging middleware
