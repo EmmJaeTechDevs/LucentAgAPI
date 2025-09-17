@@ -828,6 +828,26 @@ export const insertFarmerCropSchema = createInsertSchema(farmerCrops)
     description: z.string().optional(),
   });
 
+// Update schema for farmer crops (allows partial updates)
+export const updateFarmerCropSchema = insertFarmerCropSchema.partial().extend({
+  harvestDate: z.string({
+    required_error: "Harvest date is required"
+  }).transform((dateString, ctx) => {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.invalid_date,
+        message: "Invalid harvest date format"
+      });
+      return z.NEVER;
+    }
+    return date;
+  }).optional() // TODO: Temporarily disabled future date validation for updates
+  // .refine(date => date > new Date(), {
+  //   message: "Harvest date must be in the future"
+  // })
+});
+
 export const insertCropOrderSchema = createInsertSchema(cropOrders)
   .omit({
     id: true,

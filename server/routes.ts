@@ -19,6 +19,7 @@ import {
   insertFarmerAnswerSchema,
   insertUserNotificationPreferencesSchema,
   insertFarmerCropSchema,
+  updateFarmerCropSchema,
   insertCropOrderSchema,
   insertCropNotificationSchema,
   insertDeliveryLocationSchema,
@@ -2886,8 +2887,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
-      const updates = req.body;
-      const crop = await storage.updateFarmerCrop(req.params.cropId, user.id, updates);
+      const validatedUpdates = updateFarmerCropSchema.parse(req.body);
+      const crop = await storage.updateFarmerCrop(req.params.cropId, user.id, validatedUpdates);
       
       if (!crop) {
         return res.status(404).json({ message: 'Crop not found' });
@@ -2898,6 +2899,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         crop
       });
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Validation failed', errors: error.errors });
+      }
       next(error);
     }
   });
