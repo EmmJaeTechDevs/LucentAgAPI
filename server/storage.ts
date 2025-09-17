@@ -972,7 +972,10 @@ export class DatabaseStorage implements IStorage {
     return {
       crops: crops.map(row => ({
         ...row.crop,
-        plant: row.plant,
+        plant: {
+          ...row.plant,
+          imageUrl: row.plant.imageUrl || ""
+        },
         farmer: row.farmer,
       })),
       total,
@@ -1030,7 +1033,10 @@ export class DatabaseStorage implements IStorage {
     return {
       crops: crops.map(row => ({
         ...row.crop,
-        plant: row.plant,
+        plant: {
+          ...row.plant,
+          imageUrl: row.plant.imageUrl || ""
+        },
         farmer: row.farmer,
       })),
       total,

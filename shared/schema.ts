@@ -129,6 +129,7 @@ export const plants = pgTable("plants", {
   description: text("description"),
   category: text("category"), // e.g., 'vegetables', 'fruits', 'grains', 'herbs'
   growthDuration: text("growth_duration"), // e.g., '3-4 months'
+  imageUrl: text("image_url"), // Plant image URL
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").default(sql`now()`),
   updatedAt: timestamp("updated_at").default(sql`now()`),
