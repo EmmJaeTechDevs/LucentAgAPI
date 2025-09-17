@@ -671,9 +671,18 @@ export const insertFarmerCropSchema = createInsertSchema(farmerCrops).omit({
   totalQuantity: z.number().int().min(1, "Quantity must be at least 1"),
   unit: z.string().min(1, "Unit is required"),
   pricePerUnit: z.number().int().min(1, "Price must be greater than 0"),
-  harvestDate: z.date({
-    required_error: "Harvest date is required",
-    invalid_type_error: "Invalid harvest date"
+  harvestDate: z.string({
+    required_error: "Harvest date is required"
+  }).transform((dateString, ctx) => {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.invalid_date,
+        message: "Invalid harvest date format"
+      });
+      return z.NEVER;
+    }
+    return date;
   }).refine(date => date > new Date(), {
     message: "Harvest date must be in the future"
   }),
