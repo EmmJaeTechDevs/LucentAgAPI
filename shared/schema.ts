@@ -312,6 +312,28 @@ export const deliveryUnits = pgTable("delivery_units", {
   updatedAt: timestamp("updated_at").default(sql`now()`),
 });
 
+// Location reference tables
+export const countries = pgTable("countries", {
+  id: integer("id").primaryKey(),
+  name: varchar("name").notNull(),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+export const states = pgTable("states", {
+  id: integer("id").primaryKey(),
+  name: varchar("name").notNull(),
+  countryId: integer("country_id").notNull(),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
+export const lgas = pgTable("lgas", {
+  id: integer("id").primaryKey(),
+  name: varchar("name").notNull(),
+  stateId: integer("state_id").notNull(),
+  countryId: integer("country_id").notNull(),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   otpCodes: many(otpCodes),
@@ -769,6 +791,9 @@ export type InsertDeliveryLocation = z.infer<
 >;
 export type DeliveryUnit = typeof deliveryUnits.$inferSelect;
 export type InsertDeliveryUnit = z.infer<typeof insertDeliveryUnitSchema>;
+export type Country = typeof countries.$inferSelect;
+export type State = typeof states.$inferSelect;
+export type Lga = typeof lgas.$inferSelect;
 
 // Search and filter types
 export type CropSearchParams = z.infer<typeof cropSearchSchema>;

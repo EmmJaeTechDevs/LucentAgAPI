@@ -15,6 +15,9 @@ import {
   cropNotifications,
   deliveryLocations,
   deliveryUnits,
+  countries,
+  states,
+  lgas,
   type User, 
   type InsertUser,
   type InsertFarmer,
@@ -49,6 +52,9 @@ import {
   type InsertDeliveryLocation,
   type DeliveryUnit,
   type InsertDeliveryUnit,
+  type Country,
+  type State,
+  type Lga,
   type CropSearchParams
 } from "@shared/schema";
 import { db } from "./db";
@@ -172,6 +178,11 @@ export interface IStorage {
   updateDeliveryUnit(unitId: string, updates: Partial<DeliveryUnit>): Promise<DeliveryUnit | undefined>;
   deleteDeliveryUnit(unitId: string): Promise<boolean>;
   getDeliveryUnitByName(name: string): Promise<DeliveryUnit | undefined>;
+
+  // Location reference methods
+  getAllCountries(): Promise<Country[]>;
+  getStatesByCountry(countryId: number): Promise<State[]>;
+  getLgasByState(stateId: number): Promise<Lga[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1223,6 +1234,30 @@ export class DatabaseStorage implements IStorage {
       .from(deliveryUnits)
       .where(eq(deliveryUnits.name, name));
     return unit || undefined;
+  }
+
+  // Location reference methods
+  async getAllCountries(): Promise<Country[]> {
+    return await db
+      .select()
+      .from(countries)
+      .orderBy(asc(countries.name));
+  }
+
+  async getStatesByCountry(countryId: number): Promise<State[]> {
+    return await db
+      .select()
+      .from(states)
+      .where(eq(states.countryId, countryId))
+      .orderBy(asc(states.name));
+  }
+
+  async getLgasByState(stateId: number): Promise<Lga[]> {
+    return await db
+      .select()
+      .from(lgas)
+      .where(eq(lgas.stateId, stateId))
+      .orderBy(asc(lgas.name));
   }
 }
 
