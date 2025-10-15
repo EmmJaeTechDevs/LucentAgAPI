@@ -1884,7 +1884,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Only farmers can access this endpoint' });
       }
 
@@ -1940,7 +1940,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Only farmers can access this endpoint' });
       }
 
@@ -2140,7 +2140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Only farmers can access this endpoint' });
       }
 
@@ -2248,7 +2248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Only farmers can access this endpoint' });
       }
 
@@ -2374,7 +2374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = (req as any).user;
       
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Only farmers can submit answers' });
       }
 
@@ -2716,7 +2716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/farmer/crops', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -2782,7 +2782,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/farmer/crops', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -2822,7 +2822,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/farmer/crops/:cropId', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -2883,7 +2883,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put('/api/farmer/crops/:cropId', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -2932,7 +2932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/farmer/crops/:cropId', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -2990,7 +2990,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/farmer/orders', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -3031,7 +3031,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/farmer/orders/:orderId', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -3072,7 +3072,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/farmer/orders/:orderId/deliver', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'farmer') {
+      if (user.roleId !== 1) { // 1 = farmer role
         return res.status(403).json({ message: 'Access denied. Farmer account required.' });
       }
 
@@ -3319,7 +3319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/buyer/orders', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'buyer') {
+      if (user.roleId !== 2) { // 2 = buyer role
         return res.status(403).json({ message: 'Access denied. Buyer account required.' });
       }
 
@@ -3391,7 +3391,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/buyer/orders', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'buyer') {
+      if (user.roleId !== 2) { // 2 = buyer role
         return res.status(403).json({ message: 'Access denied. Buyer account required.' });
       }
 
@@ -3444,7 +3444,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/buyer/notifications', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'buyer') {
+      if (user.roleId !== 2) { // 2 = buyer role
         return res.status(403).json({ message: 'Access denied. Buyer account required.' });
       }
 
@@ -3508,7 +3508,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/buyer/notifications', authenticateToken, async (req, res, next) => {
     try {
       const user = (req as any).user;
-      if (user.userType !== 'buyer') {
+      if (user.roleId !== 2) { // 2 = buyer role
         return res.status(403).json({ message: 'Access denied. Buyer account required.' });
       }
 

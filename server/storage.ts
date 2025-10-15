@@ -1,5 +1,6 @@
 import { 
   users, 
+  roles,
   otpCodes, 
   httpLogs, 
   errorLogs, 
@@ -19,6 +20,7 @@ import {
   states,
   lgas,
   type User, 
+  type Role,
   type InsertUser,
   type InsertFarmer,
   type InsertBuyer,
@@ -62,6 +64,12 @@ import { eq, and, desc, count, gte, lt, asc, lte, sql, or, ilike } from "drizzle
 import bcrypt from "bcryptjs";
 
 export interface IStorage {
+  // Role methods
+  getAllRoles(): Promise<Role[]>;
+  getRoleById(id: number): Promise<Role | undefined>;
+  getRoleByName(name: string): Promise<Role | undefined>;
+  createRole(id: number, name: string, description?: string): Promise<Role>;
+  
   // User methods
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
@@ -186,6 +194,27 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Role methods
+  async getAllRoles(): Promise<Role[]> {
+    return await db.select().from(roles).orderBy(asc(roles.id));
+  }
+
+  async getRoleById(id: number): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.id, id));
+    return role || undefined;
+  }
+
+  async getRoleByName(name: string): Promise<Role | undefined> {
+    const [role] = await db.select().from(roles).where(eq(roles.name, name));
+    return role || undefined;
+  }
+
+  async createRole(id: number, name: string, description?: string): Promise<Role> {
+    const [role] = await db.insert(roles).values({ id, name, description }).returning();
+    return role;
+  }
+
+  // User methods
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user || undefined;
@@ -216,9 +245,11 @@ export class DatabaseStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const hashedPassword = await bcrypt.hash(insertUser.password, 12);
+    // Set roleId based on userType for backwards compatibility
+    const roleId = insertUser.userType === 'farmer' ? 1 : 2;
     const [user] = await db
       .insert(users)
-      .values({ ...insertUser, password: hashedPassword })
+      .values({ ...insertUser, password: hashedPassword, roleId })
       .returning();
     return user;
   }
@@ -227,7 +258,7 @@ export class DatabaseStorage implements IStorage {
     const hashedPassword = await bcrypt.hash(insertFarmer.password, 12);
     const [user] = await db
       .insert(users)
-      .values({ ...insertFarmer, password: hashedPassword })
+      .values({ ...insertFarmer, password: hashedPassword, roleId: 1 }) // roleId 1 for farmer
       .returning();
     return user;
   }
@@ -236,7 +267,7 @@ export class DatabaseStorage implements IStorage {
     const hashedPassword = await bcrypt.hash(insertBuyer.password, 12);
     const [user] = await db
       .insert(users)
-      .values({ ...insertBuyer, password: hashedPassword })
+      .values({ ...insertBuyer, password: hashedPassword, roleId: 2 }) // roleId 2 for buyer
       .returning();
     return user;
   }

@@ -12,12 +12,21 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Roles table for user type management
+export const roles = pgTable("roles", {
+  id: integer("id").primaryKey(),
+  name: text("name").notNull().unique(), // 'farmer', 'buyer'
+  description: text("description"),
+  createdAt: timestamp("created_at").default(sql`now()`),
+});
+
 export const users = pgTable("users", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
+  roleId: integer("role_id").references(() => roles.id), // Reference to roles table
   username: text("username"), // Preserve existing column
-  userType: text("user_type"), // 'farmer' or 'buyer' (optional to preserve existing data)
+  userType: text("user_type"), // DEPRECATED: 'farmer' or 'buyer' - kept temporarily for migration
   firstName: text("first_name"),
   lastName: text("last_name"),
   phone: text("phone").notNull().unique(),
@@ -743,6 +752,7 @@ export const insertFarmerAnswerSchema = createInsertSchema(farmerAnswers)
   });
 
 // Types
+export type Role = typeof roles.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertFarmer = z.infer<typeof insertFarmerSchema>;
 export type InsertBuyer = z.infer<typeof insertBuyerSchema>;
