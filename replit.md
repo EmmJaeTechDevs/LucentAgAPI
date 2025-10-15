@@ -30,6 +30,8 @@ Preferred communication style: Simple, everyday language.
 
 **JWT-Based Sessions**: Stateless authentication using JSON Web Tokens with configurable expiration times. Session tokens are stored in the database for revocation capabilities.
 
+**Role-Based Access Control**: User roles are managed through a normalized roles table with roleId foreign key in the users table. Current roles: farmer (id=1) and buyer (id=2). All authorization checks use roleId for consistent access control. The userType column is retained for backwards compatibility with existing API clients.
+
 **Multi-Factor Authentication**: SMS-based OTP verification for user registration and login. OTP codes have configurable expiration times and single-use enforcement. Email OTP has been disabled in favor of SMS-only verification.
 
 **Password Security**: Bcrypt hashing with salt rounds for secure password storage. No plaintext passwords are ever stored.
