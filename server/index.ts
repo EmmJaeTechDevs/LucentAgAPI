@@ -11,9 +11,10 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === "production"
-        ? ["https://lucent-ag-mvp-damidek.replit.app", "*"] // Add your production frontend URL here
+        ? ["http://localhost:5000", "*"] // Add your production frontend URL here
         : [
             "http://localhost:3000",
+            "http://localhost:5000",
             "http://localhost:5173",
             "http://127.0.0.1:3000",
             "http://127.0.0.1:5173",
