@@ -11,15 +11,19 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === "production"
-        ? ["http://lucent-ag-mvp-damidek.replit.app", "*"] // Add your production frontend URL here
+        ? [
+            "https://lucent-ag-mvp-damidek.replit.app",
+            "http://lucent-ag-mvp-damidek.replit.app/",
+            "*",
+          ] // Add your production frontend URL here
         : [
             "http://localhost:3000",
             "http://localhost:5000",
             "http://localhost:5173",
             "http://127.0.0.1:3000",
             "http://127.0.0.1:5173",
-            "http://lucent-ag-mvp-damidek.replit.app",
-            "https://lucent-ag-mvp-damidek.replit.app",
+            "http://lucent-ag-mvp-damidek.replit.app/",
+            "https://lucent-ag-mvp-damidek.replit.app/",
             "*",
           ], // Common React dev server ports
     credentials: true,
