@@ -14,6 +14,8 @@ app.use(
         ? [
             "https://lucent-ag-mvp-damidek.replit.app",
             "http://lucent-ag-mvp-damidek.replit.app/",
+            "http://localhost:5000",
+
             "*",
           ] // Add your production frontend URL here
         : [
