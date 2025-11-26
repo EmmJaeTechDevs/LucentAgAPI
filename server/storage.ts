@@ -79,6 +79,7 @@ export interface IStorage {
   createFarmer(farmer: InsertFarmer): Promise<User>;
   createBuyer(buyer: InsertBuyer): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  deleteUnverifiedAccounts(hoursOld: number): Promise<number>;
   
   // OTP methods
   createOtpCode(otp: InsertOtpCode): Promise<OtpCode>;
@@ -279,6 +280,48 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user || undefined;
+  }
+
+  async deleteUnverifiedAccounts(hoursOld: number = 8): Promise<number> {
+    const cutoffTime = new Date();
+    cutoffTime.setHours(cutoffTime.getHours() - hoursOld);
+
+    // Find unverified accounts older than cutoff time
+    const unverifiedUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.isVerified, false),
+        lte(users.createdAt, cutoffTime)
+      ));
+
+    if (unverifiedUsers.length === 0) {
+      return 0;
+    }
+
+    const userIds = unverifiedUsers.map(u => u.id);
+
+    // Delete associated OTP codes first (cascade)
+    await db
+      .delete(otpCodes)
+      .where(sql`${otpCodes.userId} IN ${sql.raw(`(${userIds.map(id => `'${id}'`).join(',')})`)}`);
+
+    // Delete associated sessions (cascade)
+    await db
+      .delete(sessions)
+      .where(sql`${sessions.userId} IN ${sql.raw(`(${userIds.map(id => `'${id}'`).join(',')})`)}`);
+
+    // Delete the unverified users
+    const deletedUsers = await db
+      .delete(users)
+      .where(and(
+        eq(users.isVerified, false),
+        lte(users.createdAt, cutoffTime)
+      ))
+      .returning();
+
+    console.log(`Deleted ${deletedUsers.length} unverified accounts older than ${hoursOld} hours`);
+    return deletedUsers.length;
   }
 
   async createOtpCode(otp: InsertOtpCode): Promise<OtpCode> {

@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { authService } from "./services/auth";
 import { otpService } from "./services/otp";
+import { smsService } from "./services/sms";
 import { createLoggingMiddleware, createErrorLoggingMiddleware } from "./middleware/logging";
 import { passwordResetService } from "./services/passwordReset";
 import { deliveryService } from "./services/delivery";
@@ -221,10 +222,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Phone number already registered' });
       }
 
+      // Step 1: Generate OTP without persisting
+      const { code, expiresAt } = otpService.generateOtpData();
+      
+      // Step 2: Send SMS - if this fails, abort registration
+      try {
+        await smsService.sendOtp(validatedData.phone, code, 'verification');
+      } catch (smsError: any) {
+        console.error('SMS delivery failed during user registration:', smsError);
+        return res.status(500).json({ 
+          message: 'Failed to send verification SMS. Please try again or check your phone number.',
+          error: smsError.message 
+        });
+      }
+
+      // Step 3: Only create user in database AFTER SMS succeeds
       const user = await authService.registerUser(validatedData);
       
-      // Send verification OTP via SMS only
-      await otpService.createAndSendOtp(user.id, 'sms', 'verification', user.phone);
+      // Step 4: Persist OTP code
+      await otpService.persistOtpCode(user.id, code, expiresAt, 'sms', 'verification');
 
       res.status(201).json({ 
         message: 'User registered successfully. Please verify your phone number.',
@@ -374,11 +390,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Create farmer user
+      // Step 1: Generate OTP without persisting
+      const { code, expiresAt } = otpService.generateOtpData();
+      
+      // Step 2: Send SMS - if this fails, abort registration
+      try {
+        await smsService.sendOtp(validatedData.phone, code, 'verification');
+      } catch (smsError: any) {
+        console.error('SMS delivery failed during farmer registration:', smsError);
+        return res.status(500).json({ 
+          message: 'Failed to send verification SMS. Please try again or check your phone number.',
+          error: smsError.message 
+        });
+      }
+
+      // Step 3: Only create user in database AFTER SMS succeeds
       const farmer = await storage.createFarmer(validatedData);
       
-      // Send verification OTP via SMS only
-      await otpService.createAndSendOtp(farmer.id, 'sms', 'verification', farmer.phone);
+      // Step 4: Persist OTP code
+      await otpService.persistOtpCode(farmer.id, code, expiresAt, 'sms', 'verification');
 
       const verificationMessage = 'Farmer registered successfully. Please verify your phone number.';
 
@@ -517,11 +547,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Create buyer user
+      // Step 1: Generate OTP without persisting
+      const { code, expiresAt } = otpService.generateOtpData();
+      
+      // Step 2: Send SMS - if this fails, abort registration
+      try {
+        await smsService.sendOtp(validatedData.phone, code, 'verification');
+      } catch (smsError: any) {
+        console.error('SMS delivery failed during buyer registration:', smsError);
+        return res.status(500).json({ 
+          message: 'Failed to send verification SMS. Please try again or check your phone number.',
+          error: smsError.message 
+        });
+      }
+
+      // Step 3: Only create user in database AFTER SMS succeeds
       const buyer = await storage.createBuyer(validatedData);
       
-      // Send verification OTP via SMS only
-      await otpService.createAndSendOtp(buyer.id, 'sms', 'verification', buyer.phone);
+      // Step 4: Persist OTP code
+      await otpService.persistOtpCode(buyer.id, code, expiresAt, 'sms', 'verification');
 
       const verificationMessage = 'Buyer registered successfully. A verification SMS has been sent to your phone number. Please enter the code to complete your registration.';
 

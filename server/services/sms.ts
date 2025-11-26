@@ -1,99 +1,134 @@
+// @ts-ignore - africastalking package doesn't have TypeScript definitions
+import africastalking from 'africastalking';
+
+interface SmsDeliveryResult {
+  messageId: string;
+  status: string;
+  cost: string;
+  phoneNumber: string;
+}
+
 export class SmsService {
-  private ebulkSmsUsername: string;
-  private ebulkSmsApiKey: string;
-  private ebulkSmsSenderId: string;
+  private africastalking: any;
+  private smsClient: any;
+  private username: string;
+  private apiKey: string;
+  private senderId: string;
 
   constructor() {
-    this.ebulkSmsUsername = process.env.EBULKSMS_USERNAME || '';
-    this.ebulkSmsApiKey = process.env.EBULKSMS_API_KEY || '';
-    this.ebulkSmsSenderId = process.env.EBULKSMS_SENDER_ID || 'LucentAg';
+    this.username = process.env.AFRICASTALKING_USERNAME || '';
+    this.apiKey = process.env.AFRICASTALKING_API_KEY || '';
+    this.senderId = process.env.AFRICASTALKING_SENDER_ID || 'LucentAg';
+
+    // Initialize Africa's Talking SDK
+    if (this.username && this.apiKey) {
+      this.africastalking = africastalking({
+        apiKey: this.apiKey,
+        username: this.username
+      });
+      this.smsClient = this.africastalking.SMS;
+    }
   }
 
-  async sendOtp(phoneNumber: string, code: string, purpose: string): Promise<void> {
-    if (!this.ebulkSmsUsername || !this.ebulkSmsApiKey) {
-      console.warn('eBulkSMS credentials not configured, OTP would be sent to:', phoneNumber, 'Code:', code);
-      return;
+  async sendOtp(phoneNumber: string, code: string, purpose: string): Promise<SmsDeliveryResult> {
+    if (!this.username || !this.apiKey) {
+      console.warn('Africa\'s Talking credentials not configured. OTP would be sent to:', phoneNumber, 'Code:', code);
+      // In development/testing mode without credentials, return mock success
+      return {
+        messageId: `mock_${Date.now()}`,
+        status: 'Success (Mock)',
+        cost: 'NGN 0.00',
+        phoneNumber: phoneNumber
+      };
     }
 
     try {
       const message = this.formatOtpMessage(code, purpose);
       
-      // Format phone number - add Nigeria country code if not present
-      let formattedPhone = phoneNumber;
-      if (!phoneNumber.startsWith('+')) {
-        if (phoneNumber.startsWith('234')) {
-          formattedPhone = phoneNumber;
-        } else if (phoneNumber.startsWith('0')) {
-          formattedPhone = '234' + phoneNumber.substring(1);
-        } else {
-          formattedPhone = '234' + phoneNumber;
-        }
-      } else {
-        formattedPhone = phoneNumber.substring(1); // Remove + prefix for eBulkSMS
-      }
+      // Normalize phone number to E.164 format (required by Africa's Talking)
+      const formattedPhone = this.normalizePhoneNumber(phoneNumber);
       
-      // Generate unique message ID for delivery tracking
-      const msgId = `lucent_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-      
-      // Using eBulkSMS REST API
-      const requestBody = {
-        SMS: {
-          auth: {
-            username: this.ebulkSmsUsername,
-            apikey: this.ebulkSmsApiKey
-          },
-          message: {
-            sender: this.ebulkSmsSenderId,
-            messagetext: message,
-            flash: "0" // Normal SMS, not flash
-          },
-          recipients: {
-            gsm: [
-              {
-                msidn: formattedPhone,
-                msgid: msgId
-              }
-            ]
-          },
-          dndsender: "0" // Disable DND option
-        }
-      };
-      
-      const response = await fetch('https://api.ebulksms.com/sendsms.json', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+      // Send SMS via Africa's Talking
+      const response = await this.smsClient.send({
+        to: [formattedPhone],
+        message: message,
+        from: this.senderId
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { message: errorText || 'Unknown error', status: response.status };
-        }
-        
-        console.error('eBulkSMS API Error:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorData: errorData,
-          phone: formattedPhone,
-          sender: this.ebulkSmsSenderId,
-          msgId: msgId
-        });
-        
-        throw new Error(`SMS send failed (${response.status}): ${errorData.response?.status || errorData.message || response.statusText}`);
+      console.log('Africa\'s Talking raw response:', JSON.stringify(response, null, 2));
+
+      // Parse Africa's Talking response
+      if (!response.SMSMessageData || !response.SMSMessageData.Recipients) {
+        throw new Error('Invalid response format from Africa\'s Talking');
       }
 
-      const responseData = await response.json();
-      console.log(`OTP sent successfully to ${phoneNumber} (msgId: ${msgId}):`, responseData);
-    } catch (error) {
+      const recipients = response.SMSMessageData.Recipients;
+      
+      if (recipients.length === 0) {
+        throw new Error('No recipients in SMS response');
+      }
+
+      const recipient = recipients[0];
+      
+      // Check status code: 101 = Success, 102 = Queued
+      if (recipient.statusCode !== 101 && recipient.statusCode !== 102) {
+        const errorMessage = `SMS delivery failed: ${recipient.status} (Code: ${recipient.statusCode})`;
+        console.error('Africa\'s Talking delivery error:', {
+          statusCode: recipient.statusCode,
+          status: recipient.status,
+          number: recipient.number,
+          cost: recipient.cost
+        });
+        throw new Error(errorMessage);
+      }
+
+      // Return delivery metadata for auditing
+      const deliveryResult: SmsDeliveryResult = {
+        messageId: recipient.messageId || `at_${Date.now()}`,
+        status: recipient.status,
+        cost: recipient.cost || 'N/A',
+        phoneNumber: formattedPhone
+      };
+
+      console.log(`OTP sent successfully to ${phoneNumber}:`, deliveryResult);
+      
+      return deliveryResult;
+    } catch (error: any) {
       console.error('Failed to send SMS:', error);
-      throw new Error('Failed to send SMS verification code');
+      
+      // Throw specific error to prevent database persistence
+      if (error.message?.includes('SMS delivery failed')) {
+        throw error;
+      }
+      
+      throw new Error(`Failed to send SMS verification code: ${error.message || 'Unknown error'}`);
     }
+  }
+
+  /**
+   * Normalize phone number to E.164 format
+   * Supports Nigerian numbers primarily, can be extended for other countries
+   */
+  private normalizePhoneNumber(phoneNumber: string): string {
+    // Remove all spaces and hyphens
+    let cleaned = phoneNumber.replace(/[\s-]/g, '');
+    
+    // Already in E.164 format
+    if (cleaned.startsWith('+')) {
+      return cleaned;
+    }
+    
+    // Handle Nigerian numbers
+    if (cleaned.startsWith('234')) {
+      return `+${cleaned}`;
+    }
+    
+    if (cleaned.startsWith('0')) {
+      return `+234${cleaned.substring(1)}`;
+    }
+    
+    // Default: assume Nigerian number
+    return `+234${cleaned}`;
   }
 
   private formatOtpMessage(code: string, purpose: string): string {
@@ -103,7 +138,14 @@ export class SmsService {
       password_reset: `Your Lucent Ag password reset code is: ${code}. This code will expire in 10 minutes.`,
     };
 
-    return messages[purpose as keyof typeof messages] || `Your Lucent Ag code is: ${code}`;
+    const message = messages[purpose as keyof typeof messages] || `Your Lucent Ag code is: ${code}`;
+    
+    // Ensure message doesn't exceed 160 characters (single SMS limit)
+    if (message.length > 160) {
+      console.warn(`SMS message exceeds 160 characters (${message.length}), may be split into multiple messages`);
+    }
+    
+    return message;
   }
 }
 

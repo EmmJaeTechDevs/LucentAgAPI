@@ -216,6 +216,25 @@ app.get("/api-docs.json", (req, res) => {
     },
     () => {
       console.log(`[express] API server serving on port ${port}`);
+      
+      // Start scheduled cleanup job for unverified accounts
+      // Runs every 15 minutes to delete unverified accounts older than 8 hours
+      const CLEANUP_INTERVAL = 15 * 60 * 1000; // 15 minutes in milliseconds
+      const ACCOUNT_EXPIRY_HOURS = 8;
+      
+      setInterval(async () => {
+        try {
+          const { storage } = await import('./storage');
+          const deletedCount = await storage.deleteUnverifiedAccounts(ACCOUNT_EXPIRY_HOURS);
+          if (deletedCount > 0) {
+            console.log(`[cleanup] Removed ${deletedCount} unverified accounts older than ${ACCOUNT_EXPIRY_HOURS} hours`);
+          }
+        } catch (error) {
+          console.error('[cleanup] Error cleaning up unverified accounts:', error);
+        }
+      }, CLEANUP_INTERVAL);
+      
+      console.log(`[cleanup] Scheduled cleanup job started - runs every ${CLEANUP_INTERVAL / 60000} minutes`);
     },
   );
 })();
