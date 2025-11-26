@@ -1,56 +1,66 @@
+import sgMail from '@sendgrid/mail';
+
+export interface EmailDeliveryResult {
+  messageId: string;
+  status: string;
+  email: string;
+}
+
 export class EmailService {
-  private smtpHost: string;
-  private smtpPort: number;
-  private smtpUser: string;
-  private smtpPass: string;
+  private apiKey: string;
   private fromEmail: string;
+  private isConfigured: boolean;
 
   constructor() {
-    this.smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    this.smtpPort = parseInt(process.env.SMTP_PORT || '587');
-    this.smtpUser = process.env.SMTP_USER || '';
-    this.smtpPass = process.env.SMTP_PASS || '';
+    this.apiKey = process.env.SENDGRID_API_KEY || '';
     this.fromEmail = process.env.FROM_EMAIL || 'noreply@lucentag.com';
+    this.isConfigured = false;
+
+    if (this.apiKey) {
+      sgMail.setApiKey(this.apiKey);
+      this.isConfigured = true;
+    }
   }
 
-  async sendOtp(email: string, code: string, purpose: string): Promise<void> {
-    if (!this.smtpUser || !this.smtpPass) {
-      console.warn('SMTP credentials not configured, OTP would be sent to:', email, 'Code:', code);
-      return;
+  async sendOtp(email: string, code: string, purpose: string): Promise<EmailDeliveryResult> {
+    if (!this.apiKey || !this.isConfigured) {
+      console.error('SendGrid API key not configured. Cannot send email to:', email);
+      throw new Error('Email service not configured. Please contact support.');
     }
 
     try {
       const subject = this.getEmailSubject(purpose);
       const html = this.formatOtpEmail(code, purpose);
 
-      // Using nodemailer would require adding it to dependencies
-      // For now, we'll simulate the email sending
-      console.log(`Email would be sent to ${email} with subject: ${subject}`);
-      console.log(`OTP Code: ${code}`);
-      
-      // In a real implementation, you would use nodemailer here:
-      /*
-      const transporter = nodemailer.createTransporter({
-        host: this.smtpHost,
-        port: this.smtpPort,
-        secure: false,
-        auth: {
-          user: this.smtpUser,
-          pass: this.smtpPass,
-        },
-      });
-
-      await transporter.sendMail({
-        from: this.fromEmail,
+      const msg = {
         to: email,
+        from: this.fromEmail,
         subject,
         html,
-      });
-      */
+      };
 
-    } catch (error) {
-      console.error('Failed to send email:', error);
-      throw new Error('Failed to send email verification code');
+      const response = await sgMail.send(msg);
+      
+      // SendGrid returns an array, first element contains the response
+      const [firstResponse] = response;
+      
+      console.log(`Email sent successfully to ${email} via SendGrid`);
+      console.log(`SendGrid Response - Status: ${firstResponse.statusCode}, MessageID: ${firstResponse.headers['x-message-id']}`);
+
+      return {
+        messageId: firstResponse.headers['x-message-id'] || `sendgrid_${Date.now()}`,
+        status: firstResponse.statusCode === 202 ? 'Accepted' : `Status ${firstResponse.statusCode}`,
+        email: email
+      };
+
+    } catch (error: any) {
+      console.error('Failed to send email via SendGrid:', error);
+      
+      if (error.response) {
+        console.error('SendGrid Error Details:', error.response.body);
+      }
+      
+      throw new Error(`Failed to send email verification code: ${error.message}`);
     }
   }
 
