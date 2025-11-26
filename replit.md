@@ -32,7 +32,16 @@ Preferred communication style: Simple, everyday language.
 
 **Role-Based Access Control**: User roles are managed through a normalized roles table with roleId foreign key in the users table. Current roles: farmer (id=1) and buyer (id=2). All authorization checks use roleId for consistent access control. The userType column is retained for backwards compatibility with existing API clients.
 
-**Multi-Factor Authentication**: SMS-based OTP verification for user registration and login. OTP codes have configurable expiration times and single-use enforcement. Email OTP has been disabled in favor of SMS-only verification.
+**Multi-Factor Authentication**: SMS-based OTP verification for user registration and login using Africa's Talking SMS API. OTP codes have configurable expiration times and single-use enforcement. Email OTP has been disabled in favor of SMS-only verification.
+
+**Transactional Registration Flow**: User registration follows a strict transactional flow to ensure data integrity:
+1. Generate OTP code without persisting to database
+2. Send SMS via Africa's Talking - if SMS delivery fails, abort registration immediately
+3. Create user in database ONLY after SMS sends successfully
+4. Persist OTP code to database - if persistence fails, rollback by deleting the created user
+5. This ensures no orphaned users exist without valid OTP codes, and no users are created without successful SMS delivery
+
+**Automatic Cleanup**: A scheduled background job runs every 15 minutes to delete unverified accounts older than 8 hours. This cleanup cascades to associated OTP codes and sessions, maintaining database integrity and preventing accumulation of incomplete registrations.
 
 **Password Security**: Bcrypt hashing with salt rounds for secure password storage. No plaintext passwords are ever stored.
 
@@ -42,7 +51,7 @@ Preferred communication style: Simple, everyday language.
 
 **Neon Database**: Serverless PostgreSQL hosting with WebSocket support for real-time connections.
 
-**Twilio SMS**: SMS delivery service for phone-based OTP verification. Includes fallback logging when credentials are not configured.
+**Africa's Talking SMS**: Primary SMS delivery service for phone-based OTP verification using Africa's Talking API. The service requires valid API credentials (AFRICASTALKING_USERNAME and AFRICASTALKING_API_KEY) and throws errors if credentials are missing to prevent bypassing SMS verification. Returns delivery metadata including messageId, status codes (101=Success, 102=Queued), and cost for auditing purposes.
 
 **SMTP Email**: Email delivery through configurable SMTP providers (defaults to Gmail SMTP). Supports HTML email templates for OTP delivery.
 
