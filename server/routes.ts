@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { authService } from "./services/auth";
 import { otpService } from "./services/otp";
 import { smsService } from "./services/sms";
+import { emailService } from "./services/email";
 import { createLoggingMiddleware, createErrorLoggingMiddleware } from "./middleware/logging";
 import { passwordResetService } from "./services/passwordReset";
 import { deliveryService } from "./services/delivery";
@@ -225,23 +226,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 1: Generate OTP without persisting
       const { code, expiresAt } = otpService.generateOtpData();
       
-      // Step 2: Send SMS - if this fails, abort registration
+      // Step 2: Send email - if this fails, abort registration
       try {
-        await smsService.sendOtp(validatedData.phone, code, 'verification');
-      } catch (smsError: any) {
-        console.error('SMS delivery failed during user registration:', smsError);
+        await emailService.sendOtp(validatedData.email!, code, 'verification');
+      } catch (emailError: any) {
+        console.error('Email delivery failed during user registration:', emailError);
         return res.status(500).json({ 
-          message: 'Failed to send verification SMS. Please try again or check your phone number.',
-          error: smsError.message 
+          message: 'Failed to send verification email. Please try again or check your email address.',
+          error: emailError.message 
         });
       }
 
-      // Step 3: Only create user in database AFTER SMS succeeds
+      // Step 3: Only create user in database AFTER email succeeds
       const user = await authService.registerUser(validatedData);
       
       // Step 4: Persist OTP code - rollback user if this fails
       try {
-        await otpService.persistOtpCode(user.id, code, expiresAt, 'sms', 'verification');
+        await otpService.persistOtpCode(user.id, code, expiresAt, 'email', 'verification');
       } catch (otpError: any) {
         console.error('Failed to persist OTP after user creation, rolling back:', otpError);
         // Rollback: delete the user since OTP persistence failed
@@ -253,7 +254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.status(201).json({ 
-        message: 'User registered successfully. Please verify your phone number.',
+        message: 'User registered successfully. Please verify your email address.',
         userId: user.id 
       });
     } catch (error) {
@@ -403,23 +404,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 1: Generate OTP without persisting
       const { code, expiresAt } = otpService.generateOtpData();
       
-      // Step 2: Send SMS - if this fails, abort registration
+      // Step 2: Send email - if this fails, abort registration
       try {
-        await smsService.sendOtp(validatedData.phone, code, 'verification');
-      } catch (smsError: any) {
-        console.error('SMS delivery failed during farmer registration:', smsError);
+        await emailService.sendOtp(validatedData.email!, code, 'verification');
+      } catch (emailError: any) {
+        console.error('Email delivery failed during farmer registration:', emailError);
         return res.status(500).json({ 
-          message: 'Failed to send verification SMS. Please try again or check your phone number.',
-          error: smsError.message 
+          message: 'Failed to send verification email. Please try again or check your email address.',
+          error: emailError.message 
         });
       }
 
-      // Step 3: Only create user in database AFTER SMS succeeds
+      // Step 3: Only create user in database AFTER email succeeds
       const farmer = await storage.createFarmer(validatedData);
       
       // Step 4: Persist OTP code - rollback user if this fails
       try {
-        await otpService.persistOtpCode(farmer.id, code, expiresAt, 'sms', 'verification');
+        await otpService.persistOtpCode(farmer.id, code, expiresAt, 'email', 'verification');
       } catch (otpError: any) {
         console.error('Failed to persist OTP after user creation, rolling back:', otpError);
         // Rollback: delete the user since OTP persistence failed
@@ -430,7 +431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const verificationMessage = 'Farmer registered successfully. Please verify your phone number.';
+      const verificationMessage = 'Farmer registered successfully. Please verify your email address.';
 
       res.status(201).json({ 
         message: verificationMessage,
@@ -570,23 +571,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 1: Generate OTP without persisting
       const { code, expiresAt } = otpService.generateOtpData();
       
-      // Step 2: Send SMS - if this fails, abort registration
+      // Step 2: Send email - if this fails, abort registration
       try {
-        await smsService.sendOtp(validatedData.phone, code, 'verification');
-      } catch (smsError: any) {
-        console.error('SMS delivery failed during buyer registration:', smsError);
+        await emailService.sendOtp(validatedData.email!, code, 'verification');
+      } catch (emailError: any) {
+        console.error('Email delivery failed during buyer registration:', emailError);
         return res.status(500).json({ 
-          message: 'Failed to send verification SMS. Please try again or check your phone number.',
-          error: smsError.message 
+          message: 'Failed to send verification email. Please try again or check your email address.',
+          error: emailError.message 
         });
       }
 
-      // Step 3: Only create user in database AFTER SMS succeeds
+      // Step 3: Only create user in database AFTER email succeeds
       const buyer = await storage.createBuyer(validatedData);
       
       // Step 4: Persist OTP code - rollback user if this fails
       try {
-        await otpService.persistOtpCode(buyer.id, code, expiresAt, 'sms', 'verification');
+        await otpService.persistOtpCode(buyer.id, code, expiresAt, 'email', 'verification');
       } catch (otpError: any) {
         console.error('Failed to persist OTP after user creation, rolling back:', otpError);
         // Rollback: delete the user since OTP persistence failed
@@ -597,13 +598,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const verificationMessage = 'Buyer registered successfully. A verification SMS has been sent to your phone number. Please enter the code to complete your registration.';
+      const verificationMessage = 'Buyer registered successfully. A verification email has been sent to your email address. Please enter the code to complete your registration.';
 
       res.status(201).json({ 
         message: verificationMessage,
         userId: buyer.id,
         userType: 'buyer',
-        verificationMethod: 'sms'
+        verificationMethod: 'email'
       });
     } catch (error) {
       if (error instanceof z.ZodError) {
