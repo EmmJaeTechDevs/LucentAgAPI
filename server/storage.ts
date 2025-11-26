@@ -79,6 +79,7 @@ export interface IStorage {
   createFarmer(farmer: InsertFarmer): Promise<User>;
   createBuyer(buyer: InsertBuyer): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<void>;
   deleteUnverifiedAccounts(hoursOld: number): Promise<number>;
   
   // OTP methods
@@ -280,6 +281,15 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user || undefined;
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    // Delete associated records first (cascade)
+    await db.delete(otpCodes).where(eq(otpCodes.userId, id));
+    await db.delete(sessions).where(eq(sessions.userId, id));
+    
+    // Delete the user
+    await db.delete(users).where(eq(users.id, id));
   }
 
   async deleteUnverifiedAccounts(hoursOld: number = 8): Promise<number> {

@@ -32,14 +32,8 @@ export class SmsService {
 
   async sendOtp(phoneNumber: string, code: string, purpose: string): Promise<SmsDeliveryResult> {
     if (!this.username || !this.apiKey) {
-      console.warn('Africa\'s Talking credentials not configured. OTP would be sent to:', phoneNumber, 'Code:', code);
-      // In development/testing mode without credentials, return mock success
-      return {
-        messageId: `mock_${Date.now()}`,
-        status: 'Success (Mock)',
-        cost: 'NGN 0.00',
-        phoneNumber: phoneNumber
-      };
+      console.error('Africa\'s Talking credentials not configured. Cannot send SMS to:', phoneNumber);
+      throw new Error('SMS service not configured. Please contact support.');
     }
 
     try {
