@@ -1,15 +1,32 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import pkg from "pg";
+const { Pool } = pkg;
+
+import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
 
-neonConfig.webSocketConstructor = ws;
-
 if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
+  throw new Error("DATABASE_URL must be set.");
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle({ client: pool, schema });
+// Mask DB password before logging
+function maskDbUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.password) u.password = "********";
+    return u.toString();
+  } catch {
+    return "[Invalid DATABASE_URL]";
+  }
+}
+
+const rawUrl = process.env.DATABASE_URL;
+console.log("[DB] Connecting using:", maskDbUrl(rawUrl));
+
+export const pool = new Pool({
+  connectionString: rawUrl,
+  ssl: {
+    rejectUnauthorized: false, // Required for CloudClusters SSL chain issues
+  },
+});
+
+export const db = drizzle(pool, { schema });

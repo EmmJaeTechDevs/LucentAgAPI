@@ -15,6 +15,8 @@ app.use(
             "https://lucent-ag-mvp-damidek.replit.app",
             "http://lucent-ag-mvp-damidek.replit.app/",
             "http://localhost:5000",
+	    "https://shambabridge-lucentag.com",
+            "https://www.shambabridge-lucentag.com",
 
             "*",
           ] // Add your production frontend URL here
@@ -26,6 +28,8 @@ app.use(
             "http://127.0.0.1:5173",
             "http://lucent-ag-mvp-damidek.replit.app/",
             "https://lucent-ag-mvp-damidek.replit.app/",
+            "https://shambabridge-lucentag.com",
+            "https://www.shambabridge-lucentag.com",
             "*",
           ], // Common React dev server ports
     credentials: true,
